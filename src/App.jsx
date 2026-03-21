@@ -128,30 +128,13 @@ function App() {
             </pre>
           </div>
 
-          {/* What changed (local only) */}
-          {localResult && !isAI && localResult.changes.length > 0 && (
+          {/* What changed */}
+          {activeResult.changes && activeResult.changes.length > 0 && (
             <div style={{ background: '#f9fafb', padding: 16, borderRadius: 8, marginBottom: 14, border: '1px solid #e5e7eb' }}>
               <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>What changed</h3>
               <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14 }}>
-                {localResult.changes.map((c, i) => <li key={i}>{c}</li>)}
+                {activeResult.changes.map((c, i) => <li key={i}>{c}</li>)}
               </ul>
-            </div>
-          )}
-
-          {/* Structural suggestions (local only) */}
-          {localResult && !isAI && localResult.suggestions.length > 0 && (
-            <div style={{ background: '#fffbeb', padding: 16, borderRadius: 8, marginBottom: 14, border: '1px solid #fde68a' }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>Structural suggestions</h3>
-              {localResult.suggestions.map((s, i) => (
-                <div key={i} style={{ marginBottom: i < localResult.suggestions.length - 1 ? 10 : 0, fontSize: 14 }}>
-                  <strong>{s.label}</strong>
-                  <br />
-                  <span style={{ color: '#666' }}>{s.tip}</span>
-                </div>
-              ))}
-              <p style={{ margin: '12px 0 0', fontSize: 13, color: '#92400e' }}>
-                Try "Deep Optimize with AI" to apply these automatically.
-              </p>
             </div>
           )}
 
