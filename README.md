@@ -4,6 +4,8 @@ A prompt structuring engine that transforms messy, conversational prompts into s
 
 > "Most prompt optimization tools try to shorten prompts. This one structures them — because structure reduces retries, not just tokens."
 
+![From Messy to Masterful: Inside the Prompt Optimizer Engine](docs/internal-logic.png)
+
 ## What it does
 
 Paste a prompt like this (333 tokens):
