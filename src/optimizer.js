@@ -87,8 +87,32 @@ const REDUNDANT_PATTERNS = [
   /\balso,?\s*/gi,
 ];
 
+// Task normalization: vague content descriptions → clear format
+const TASK_NORMALIZATIONS = [
+  [/\b(?:create|write|produce)\s+(?:some\s+)?(?:sort of\s+)?(?:content|something),?\s*(?:like\s+)?(?:maybe\s+)?(?:a\s+)?(?:blog|article)\s*(?:or\s+(?:article|blog|something))?\s*(?:or\s+something\s+(?:along\s+those\s+lines|like\s+that))?\b/gi, 'write a blog post'],
+  [/\b(?:some\s+)?(?:sort\s+of\s+)?(?:content|piece),?\s*(?:like\s+)?(?:maybe\s+)?(?:a\s+)?blog\b/gi, 'a blog post'],
+  [/\bif that makes sense\b/gi, ''],
+  [/\byeah,?\s*/gi, ''],
+  [/\bI guess\b/gi, ''],
+  [/\bor something(?:\s+like that)?\b/gi, ''],
+  [/\balong those lines\b/gi, ''],
+  [/\bpretty much\b/gi, ''],
+  [/\bnot too (\w+)\s+(?:where|because|but)\s+.+?(?:\.|,|$)/gim, ''],
+  [/\bI'm not super strict about .+?(?:\.|,|$)/gim, ''],
+  [/\bit's okay if not\b/gi, ''],
+  [/\bbut it's okay\b/gi, ''],
+  [/\bif possible\b/gi, ''],
+  [/\bif you can\b/gi, ''],
+  [/\bjust to wrap things up nicely\b/gi, ''],
+  [/\bjust something that looks clean\b/gi, ''],
+];
+
 function hardCleanup(text) {
   let result = text;
+  // Task normalization first (before soft language removal)
+  for (const [pattern, replacement] of TASK_NORMALIZATIONS) {
+    result = result.replace(pattern, replacement);
+  }
   for (const [pattern, replacement] of VERBOSE_TO_CONCISE) {
     result = result.replace(pattern, replacement);
   }
@@ -105,6 +129,8 @@ function hardCleanup(text) {
     .replace(/^ +/gm, '')
     .replace(/ +$/gm, '')
     .replace(/\.\s*\./g, '.')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s+([.,!?])/g, '$1')
     .trim();
   return result;
 }
@@ -171,14 +197,22 @@ function extractTask(text) {
     {
       const verb = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
       let obj = match[2].trim();
-      obj = obj.replace(/\s+(that|which|where|with|and|but)\s*$/, '').trim();
-      if (obj.length > 5) {
+      // Aggressively trim trailing noise from the object
+      obj = obj
+        .replace(/\s*,\s*(?:about|but|and|or|not|if|because|since|like|it|i)\b.*$/i, '')
+        .replace(/\s+(that|which|where|with|and|but)\s*$/, '')
+        .trim();
+      if (obj.length > 3) {
         let task = `${verb} ${obj}`;
 
         // Look anywhere in text for "about/on/regarding" clause to enrich the task
         const topicMatch = cleaned.match(/\b(?:about|on|regarding|concerning)\s+(?:the\s+)?(.+?)(?:\.|,|$)/im);
         if (topicMatch && topicMatch[1].trim().length > 3) {
-          task += ` on ${topicMatch[1].trim().replace(/^\w/, c => c.toLowerCase())}`;
+          const topic = topicMatch[1].trim().toLowerCase();
+          // Only append if not already in the task
+          if (!task.toLowerCase().includes(topic.split(/\s+/)[0])) {
+            task += ` on ${topic}`;
+          }
         }
 
         return task;
@@ -199,19 +233,48 @@ function extractConstraints(text) {
   const constraints = [];
   const lower = text.toLowerCase();
 
-  // Tone
-  const toneMatch = lower.match(/\b(professional|casual|formal|friendly|technical|simple|academic|conversational|humorous|serious|persuasive|informative)\s*(?:tone|style|voice|manner|writing)/i)
-    || lower.match(/\b(?:tone|style|voice|manner|writing)\s*(?::|should be|is|=)\s*(professional|casual|formal|friendly|technical|simple|academic|conversational|humorous|serious|persuasive|informative)/i)
-    || lower.match(/\b(?:in a |write it |make it )(professional|casual|formal|friendly|technical|simple|academic|conversational|humorous|serious|persuasive|informative)\b/i);
-  if (toneMatch) {
-    constraints.push(`Tone: ${toneMatch[1].charAt(0).toUpperCase() + toneMatch[1].slice(1)}`);
+  // Tone — detect compound tones like "professional but not too boring"
+  const toneWords = ['professional', 'casual', 'formal', 'friendly', 'simple', 'academic', 'conversational', 'humorous', 'serious', 'persuasive', 'informative'];
+  const detectedTones = [];
+  for (const tone of toneWords) {
+    // Skip if preceded by "not" or "not too" — negated tones
+    if (new RegExp(`\\bnot\\s+(?:too\\s+)?${tone}\\b`, 'i').test(lower)) continue;
+    if (new RegExp(`\\b${tone}\\b`, 'i').test(lower)) {
+      detectedTones.push(tone.charAt(0).toUpperCase() + tone.slice(1));
+    }
+  }
+  // "technical" is special — only add as tone if not negated
+  if (/\btechnical\b/i.test(lower) && !/\bnot\s+(?:too\s+)?technical\b/i.test(lower) && !/\bnon-technical\b/i.test(lower)) {
+    detectedTones.push('Technical');
+  }
+  // Detect accessibility signals
+  const accessibilitySignals = [
+    /\bnot too (?:technical|complicated|complex|boring)\b/i,
+    /\bdon't.+?understand.+?complicated\b/i,
+    /\bnon-technical\b/i,
+    /\beasy to (?:understand|read|follow)\b/i,
+    /\bsimple (?:language|terms|words)\b/i,
+    /\baccessible\b/i,
+  ];
+  const isAccessible = accessibilitySignals.some(p => p.test(lower));
+  if (detectedTones.length > 0 || isAccessible) {
+    let tone = detectedTones.join(' and ');
+    if (isAccessible && !detectedTones.includes('Simple')) {
+      tone = tone ? `${tone} and accessible (non-technical audience)` : 'Accessible (non-technical audience)';
+    }
+    if (tone) constraints.push(`Tone: ${tone}`);
   }
 
-  // Length
-  const lengthMatch = lower.match(/\b(?:around|about|approximately|roughly|~)?\s*(\d+)\s*(?:words|word)\b/i)
-    || lower.match(/\b(?:under|at most|maximum|max|no more than|limit to)\s*(\d+)\s*(?:words|word)\b/i);
-  if (lengthMatch) {
-    constraints.push(`Length: ~${lengthMatch[1]} words`);
+  // Length — detect ranges like "800 to 1000 words"
+  const rangeMatch = lower.match(/\b(\d+)\s*(?:to|-|–)\s*(\d+)\s*(?:words|word)\b/i);
+  if (rangeMatch) {
+    constraints.push(`Length: ${rangeMatch[1]}–${rangeMatch[2]} words`);
+  } else {
+    const lengthMatch = lower.match(/\b(?:around|about|approximately|roughly|~)?\s*(\d+)\s*(?:words|word)\b/i)
+      || lower.match(/\b(?:under|at most|maximum|max|no more than|limit to)\s*(\d+)\s*(?:words|word)\b/i);
+    if (lengthMatch) {
+      constraints.push(`Length: ~${lengthMatch[1]} words`);
+    }
   }
 
   // Language
@@ -246,8 +309,10 @@ function compressClarity(text) {
 
 function extractKeyPoints(text) {
   const points = [];
+  const lower = text.toLowerCase();
   const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
 
+  // Pattern-based extraction from sentences
   const contentPatterns = [
     /\b(?:about|cover|mention|discuss|address|talk about|focus on)\s+(?:the )?(.+)/i,
     /\b(?:benefits? of|advantages? of|reasons? for|importance of)\s+(.+)/i,
@@ -259,10 +324,8 @@ function extractKeyPoints(text) {
       if (match) {
         let point = match[1].trim();
         point = point.replace(/\s+(that|which|because|since|as|so|and|but)\s.*$/, '');
-        // Apply clarity compression
         point = compressClarity(point);
         point = point.replace(/^\w/, c => c.toUpperCase());
-        // Skip very short/generic points
         const words = point.split(/\s+/).filter(w => w.length > 2);
         if (point.length > 5 && point.length < 150 && words.length >= 2 && !points.includes(point)) {
           points.push(point);
@@ -271,7 +334,74 @@ function extractKeyPoints(text) {
     }
   }
 
-  return points;
+  // Semantic signal detection — things the user wants covered
+  const semanticSignals = [
+    [/\b(?:challenges?|risks?|downsides?|drawbacks?|limitations?|concerns?|problems?)\b/i, null],
+    [/\b(?:real[- ]?world|practical)\s*(?:examples?|cases?|use cases?|applications?)\b/i, 'Real-world examples and applications'],
+    [/\b(?:how\s+(?:\w+\s+)?(?:are|is)\s+(?:using|leveraging|implementing|adopting))\b/i, 'Real-world examples and applications'],
+    [/\b(?:statistics?|stats|data|numbers|figures|research)\b/i, 'Include relevant statistics'],
+    [/\b(?:conclusion|summary|wrap\s*up|closing|final\s+(?:thoughts?|remarks?))\b/i, 'Provide a clear conclusion'],
+  ];
+
+  for (const [pattern, label] of semanticSignals) {
+    if (pattern.test(lower)) {
+      if (!label) {
+        // For challenges/risks, extract concrete examples like "data privacy"
+        // Try multiple patterns — example may be in same sentence or nearby
+        let example = '';
+        const examplePatterns = [
+          /\b(?:challenges?|risks?)\b[^.]*?(?:like|such as|e\.?g\.?|for example)\s+([\w\s]+?)(?:\.|,|\band\b|$)/i,
+          /\b(?:challenges?|risks?)\b[^.]*\.[^.]*?(?:like|such as|e\.?g\.?|for example)\s+([\w\s]+?)(?:\.|,|\band\b|$)/i,
+          /\b(?:data privacy|bias|security|accuracy|fairness|transparency|regulation|compliance|ethical|consent)\b/i,
+        ];
+        for (const ep of examplePatterns) {
+          const em = lower.match(ep);
+          if (em) {
+            const candidate = (em[1] ? em[1].trim() : em[0].trim());
+            // Filter out noise
+            if (candidate && !/\b(perfect|anything|something|good|bad|sound|want)\b/i.test(candidate) && candidate.length >= 3 && candidate.length <= 40) {
+              example = candidate;
+              break;
+            }
+          }
+        }
+        const point = example
+          ? `Challenges and risks (e.g., ${example.toLowerCase()})`
+          : 'Challenges and risks';
+        if (!points.includes(point)) points.push(point);
+      } else {
+        if (!points.includes(label)) points.push(label);
+      }
+    }
+  }
+
+  // Mark semantic entries so we can distinguish them from content-pattern entries
+  const semanticEntries = new Set();
+  for (const [pattern, label] of semanticSignals) {
+    if (pattern.test(lower)) {
+      // Find the entry we added for this signal
+      const added = points.find(p =>
+        (label && p === label) ||
+        (!label && p.startsWith('Challenges and risks'))
+      );
+      if (added) semanticEntries.add(added);
+    }
+  }
+
+  // Remove content-pattern entries that overlap with semantic entries
+  return points.filter(p => {
+    if (semanticEntries.has(p)) return true; // always keep semantic
+    // Check if this content-pattern entry overlaps with any semantic entry
+    const pLower = p.toLowerCase().replace(/[,.]$/,'');
+    for (const s of semanticEntries) {
+      const sLower = s.toLowerCase();
+      const pWords = pLower.split(/\s+/).filter(w => w.length > 3);
+      const sWords = sLower.split(/\s+/).filter(w => w.length > 3);
+      const overlap = pWords.filter(w => sWords.includes(w)).length;
+      if (pWords.length > 0 && (overlap / pWords.length) >= 0.4) return false;
+    }
+    return true;
+  });
 }
 
 // Deduplicate key points against task — don't repeat what the task already says
@@ -347,12 +477,29 @@ function extractOutputRequirements(text) {
     }
   }
 
-  // Structured article detection
-  if (/\b(?:structured|well-structured|organized)\s*(?:article|post|essay|document|response)\b/i.test(lower)) {
-    requirements.push('Structured format with sections');
+  // Structured article / headings detection
+  if (/\b(?:structured|well-structured|organized)\s*(?:article|post|essay|document|response)\b/i.test(lower)
+    || /\b(?:headings?|sections?|subheadings?)\b/i.test(lower)
+    || /\beasy to read\b/i.test(lower)) {
+    requirements.push('Structured article with headings and sections');
   }
 
   return requirements;
+}
+
+// Fix common acronym/proper noun casing
+function fixCasing(text) {
+  return text
+    .replace(/\bai\b/g, 'AI')
+    .replace(/\bapi\b/gi, 'API')
+    .replace(/\bapis\b/gi, 'APIs')
+    .replace(/\bml\b/gi, 'ML')
+    .replace(/\bui\b/gi, 'UI')
+    .replace(/\bux\b/gi, 'UX')
+    .replace(/\bsql\b/gi, 'SQL')
+    .replace(/\bcss\b/gi, 'CSS')
+    .replace(/\bhtml\b/gi, 'HTML')
+    .replace(/\bjson\b/gi, 'JSON');
 }
 
 // ─── Layer 3: Build structured prompt ───
@@ -385,12 +532,11 @@ function buildStructuredPrompt(role, task, constraints, keyPoints, outputRequire
     sections.push(`Output requirements:\n${outputRequirements.map(r => `- ${r}`).join('\n')}`);
   }
 
-  // If we couldn't extract much structure, fall back to cleaned text
   if (!task && sections.length <= 1) {
-    return cleanedText;
+    return fixCasing(cleanedText);
   }
 
-  return sections.join('\n\n');
+  return fixCasing(sections.join('\n\n'));
 }
 
 // ─── Main local optimize ───
