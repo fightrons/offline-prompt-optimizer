@@ -289,6 +289,89 @@ describe('Test 6: CI/CD Pipeline Guide', () => {
   });
 });
 
+// ─── Test 7: SaaS MVP Planning ───
+
+describe('Test 7: SaaS MVP Planning', () => {
+  let result;
+  const mvpInput = `Hey, so I've been thinking about building something like a small SaaS product, not anything too big or complicated, just like an MVP or something to validate an idea. Basically it's supposed to be some kind of tool that helps people manage their tasks but also maybe uses AI in some way, like suggesting priorities or something like that, I'm not 100% sure yet.
+
+I was wondering if you could help me figure out how I should approach building this, like what tech stack I should use and how I should structure things, because I don't want to over-engineer it. I've heard people say use Next.js or maybe just React with some backend, but then there's also Firebase or Supabase and all that, so it gets a bit confusing.
+
+Also, I don't really want to spend too much money in the beginning, so if there are cost-effective options that would be great. And yeah, it should probably be something that works well on mobile too, not just desktop.
+
+It would also be really helpful if you could outline like a rough plan or steps I should take, maybe like what to build first, what to ignore, and how to validate if people actually want this. I guess things like user feedback or metrics or something.
+
+Oh and if possible, could you also mention some common mistakes people make when building MVPs, because I've seen a lot of people overbuild and then it doesn't go anywhere.
+
+I don't need anything super detailed, just something clear and practical that I can follow. Thanks!`;
+
+  beforeAll(() => { result = optimizeLocal(mvpInput); });
+
+  it('should achieve >= 55% reduction', () => {
+    expect(result.reduction).toBeGreaterThanOrEqual(55);
+  });
+
+  it('should infer role as Product engineer', () => {
+    expect(result.optimizedPrompt).toContain('Role: Product engineer');
+  });
+
+  it('should extract task about building SaaS product', () => {
+    expect(result.optimizedPrompt).toMatch(/Task:.*Build.*SaaS/i);
+  });
+
+  it('should NOT falsely detect Simple tone', () => {
+    expect(result.optimizedPrompt).not.toMatch(/Tone:.*Simple/i);
+  });
+
+  it('should detect mobile-friendly constraint', () => {
+    expect(result.optimizedPrompt).toContain('Ensure mobile-friendly design');
+  });
+
+  it('should detect cost sensitivity', () => {
+    expect(result.optimizedPrompt).toContain('Prioritize low-cost implementation');
+  });
+
+  it('should detect avoid over-engineering', () => {
+    expect(result.optimizedPrompt).toContain('Avoid over-engineering');
+  });
+
+  it('should detect MVP scope key point', () => {
+    expect(result.optimizedPrompt).toContain('Define MVP scope and core features');
+  });
+
+  it('should detect AI integration with use case', () => {
+    expect(result.optimizedPrompt).toMatch(/Integrate basic AI functionality.*suggesting priorities/i);
+  });
+
+  it('should suggest all 4 tech stack options', () => {
+    expect(result.optimizedPrompt).toMatch(/Suggest suitable tech stack options/);
+    expect(result.optimizedPrompt).toMatch(/Next\.js/);
+    expect(result.optimizedPrompt).toMatch(/React/);
+    expect(result.optimizedPrompt).toMatch(/Firebase/);
+    expect(result.optimizedPrompt).toMatch(/Supabase/);
+  });
+
+  it('should NOT add tech stack as hard constraint', () => {
+    expect(result.optimizedPrompt).not.toMatch(/^- Use (?:Next\.js|React|Firebase|Supabase)/m);
+  });
+
+  it('should detect validation strategy', () => {
+    expect(result.optimizedPrompt).toContain('Define validation strategy (user feedback, metrics)');
+  });
+
+  it('should detect common mistakes with overbuilding example', () => {
+    expect(result.optimizedPrompt).toMatch(/Common mistakes.*overbuilding/i);
+  });
+
+  it('should detect development steps', () => {
+    expect(result.optimizedPrompt).toContain('Outline development steps and priorities');
+  });
+
+  it('should include step-by-step plan requirement', () => {
+    expect(result.optimizedPrompt).toContain('Clear step-by-step plan');
+  });
+});
+
 // ─── Token Estimation ───
 
 describe('Token Estimation', () => {

@@ -234,6 +234,68 @@ Output requirements:
 
 ---
 
+## Test 7: SaaS MVP Planning (Product/System Thinking)
+
+**Input** (301 tokens):
+
+```
+Hey, so I've been thinking about building something like a small SaaS product, not anything too big or complicated, just like an MVP or something to validate an idea. Basically it's supposed to be some kind of tool that helps people manage their tasks but also maybe uses AI in some way, like suggesting priorities or something like that, I'm not 100% sure yet.
+
+I was wondering if you could help me figure out how I should approach building this, like what tech stack I should use and how I should structure things, because I don't want to over-engineer it. I've heard people say use Next.js or maybe just React with some backend, but then there's also Firebase or Supabase and all that, so it gets a bit confusing.
+
+Also, I don't really want to spend too much money in the beginning, so if there are cost-effective options that would be great. And yeah, it should probably be something that works well on mobile too, not just desktop.
+
+It would also be really helpful if you could outline like a rough plan or steps I should take, maybe like what to build first, what to ignore, and how to validate if people actually want this. I guess things like user feedback or metrics or something.
+
+Oh and if possible, could you also mention some common mistakes people make when building MVPs, because I've seen a lot of people overbuild and then it doesn't go anywhere.
+
+I don't need anything super detailed, just something clear and practical that I can follow. Thanks!
+```
+
+**Expected output** (121 tokens):
+
+```
+Role: Product engineer
+
+Task: Build a small SaaS product
+
+Constraints:
+- Ensure mobile-friendly design
+- Prioritize low-cost implementation
+- Avoid over-engineering
+
+Key points:
+- Common mistakes (e.g., overbuilding)
+- Define MVP scope and core features
+- Integrate basic AI functionality (e.g., suggesting priorities)
+- Suggest suitable tech stack options (e.g., Next.js, React, Firebase, Supabase)
+- Define validation strategy (user feedback, metrics)
+- Outline development steps and priorities
+
+Output requirements:
+- Clear step-by-step plan
+- Practical and actionable guidance
+```
+
+**Reduction**: 60%
+
+**What this tests**:
+- Gerund task extraction ("building something like a small SaaS product" → "Build a small SaaS product")
+- Product engineer role inference from MVP/SaaS context (not content writer or strategic planner)
+- Uncertainty detection ("I've heard people say use Next.js or maybe just React") → tech suggestions, not hard constraints
+- All 4 uncertain tech mentions captured (Next.js, React, Firebase, Supabase)
+- Cost sensitivity detection ("don't really want to spend too much money", "cost-effective")
+- Mobile-friendly from "works well on mobile"
+- Over-engineering constraint from "don't want to over-engineer" + MVP context
+- "Tone: Simple" NOT falsely triggered ("keep it simple" = implementation simplicity, not writing tone)
+- AI use case extraction from original text ("suggesting priorities") before cleanup strips hedging words
+- Common mistakes with "overbuilding" example (normalized from "overbuild")
+- Validation strategy detection ("validate if people actually want this", "user feedback or metrics")
+- Development steps detection ("outline a rough plan or steps")
+- Topic enrichment guard (doesn't append "on mobile too" as a topic)
+
+---
+
 ## Running Tests
 
 Tests can be run manually via Node:
