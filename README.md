@@ -1,16 +1,51 @@
-# React + Vite
+# Prompt Optimizer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A 100% local, offline prompt optimizer. Paste a prompt, get a shorter one — no API calls, no tokens spent.
 
-Currently, two official plugins are available:
+## Why
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Using an LLM to optimize prompts defeats the purpose — you're spending tokens to save tokens. This tool runs entirely in the browser with rule-based transformations.
 
-## React Compiler
+## What it does
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. You paste a prompt
+2. Click "Optimize"
+3. It returns:
+   - A shorter, cleaner prompt
+   - What changed (list of transformations applied)
+   - Token estimate before/after + % reduction
 
-## Expanding the ESLint configuration
+## How it works
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+The optimizer applies these transformations locally:
+
+- **Verbose phrase replacement** — 40+ patterns like "in order to" → "to", "due to the fact that" → "because", "provide a summary of" → "summarize"
+- **Filler word removal** — strips "please", "just", "really", "basically", "honestly", "I think", "I believe", hedging language
+- **Imperative conversion** — "Can you...", "Could you..." → direct commands
+- **Redundant instruction removal** — "make sure that", "please note that", "keep in mind that", "don't forget to"
+- **Duplicate line removal** — deduplicates repeated lines
+- **Whitespace cleanup** — collapses excess spaces/newlines
+- **Token estimation** — word count × 1.3 (simple approximation)
+
+## Tech stack
+
+- React + Vite
+- Zero external dependencies beyond React
+- Single-page app, ~130 lines of UI + ~150 lines of optimizer logic
+
+## Setup
+
+```
+npm install
+npm run dev
+```
+
+Opens at `http://localhost:5173/`.
+
+## Build
+
+```
+npm run build
+```
+
+Output goes to `dist/` — static files, deploy anywhere.
