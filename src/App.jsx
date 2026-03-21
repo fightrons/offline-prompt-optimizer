@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost } from './optimizer'
+import { Settings, Copy, Check, Sparkles, Zap, AlertCircle, Bot, Key } from 'lucide-react'
 import './App.css'
 
 function formatCost(cost) {
@@ -17,6 +18,9 @@ function App() {
   const [error, setError] = useState('')
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_api_key') || '')
   const [showApiKey, setShowApiKey] = useState(false)
+  
+  const [copiedInput, setCopiedInput] = useState(false)
+  const [copiedOutput, setCopiedOutput] = useState(false)
 
   const handleLocalOptimize = () => {
     if (!input.trim()) return
@@ -61,6 +65,7 @@ function App() {
         savingsPerUse,
         breakEven,
       })
+      setShowApiKey(false)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -74,106 +79,174 @@ function App() {
     localStorage.setItem('openai_api_key', key)
   }
 
+  const handleCopyInput = async () => {
+    if (!input) return;
+    await navigator.clipboard.writeText(input);
+    setCopiedInput(true);
+    setTimeout(() => setCopiedInput(false), 2000);
+  }
+
+  const handleCopyOutput = async () => {
+    const activeResult = aiResult || localResult;
+    if (!activeResult || !activeResult.optimizedPrompt) return;
+    await navigator.clipboard.writeText(activeResult.optimizedPrompt);
+    setCopiedOutput(true);
+    setTimeout(() => setCopiedOutput(false), 2000);
+  }
+
   const activeResult = aiResult || localResult
   const isAI = !!aiResult
 
   return (
-    <div style={{ maxWidth: 720, margin: '40px auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ marginBottom: 4 }}>Prompt Optimizer</h1>
-      <p style={{ color: '#666', marginBottom: 24 }}>
-        Local cleanup is free. AI optimization costs ~$0.001 — saves 10x downstream.
-      </p>
+    <div className="app-container">
+      <header className="app-header">
+        <div className="title-group">
+          <h1>Prompt Optimizer</h1>
+          <p>Local cleanup is free. AI optimization costs ~$0.001 &mdash; saves 10x downstream.</p>
+        </div>
+      </header>
 
-      <textarea
-        rows={6}
-        placeholder="Paste your prompt here..."
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        style={{ width: '100%', padding: 12, fontSize: 15, boxSizing: 'border-box', borderRadius: 6, border: '1px solid #ccc', resize: 'vertical' }}
-      />
-
-      <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
-        <button
-          onClick={handleLocalOptimize}
-          disabled={!input.trim()}
-          style={{ padding: '10px 20px', fontSize: 15, cursor: 'pointer', background: '#222', color: '#fff', border: 'none', borderRadius: 6 }}
-        >
-          Quick Optimize (Free)
-        </button>
-        <button
-          onClick={handleAIOptimize}
-          disabled={!input.trim() || aiLoading}
-          style={{ padding: '10px 20px', fontSize: 15, cursor: aiLoading ? 'wait' : 'pointer', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6 }}
-        >
-          {aiLoading ? 'Optimizing...' : 'Deep Optimize with AI'}
+      <div className="input-section">
+        <textarea
+          className="prompt-textarea"
+          placeholder="Paste your prompt here..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+        />
+        <button className="copy-button" onClick={handleCopyInput} title="Copy Input">
+          {copiedInput ? <Check size={16} /> : <Copy size={16} />}
         </button>
       </div>
 
-      {(showApiKey || apiKey) && (
-        <div style={{ marginTop: 12 }}>
-          <input
-            type="password"
-            placeholder="OpenAI API Key (for AI optimization)"
-            value={apiKey}
-            onChange={handleApiKeyChange}
-            style={{ width: '100%', padding: 8, fontSize: 13, boxSizing: 'border-box', borderRadius: 4, border: '1px solid #ddd' }}
-          />
+      <div className="action-buttons">
+        <button
+          className="btn-secondary"
+          onClick={handleLocalOptimize}
+          disabled={!input.trim() || aiLoading}
+        >
+          <Zap size={16} style={{ display: 'inline', marginRight: 8, verticalAlign: 'text-bottom' }} />
+          Local Cleanup (Free)
+        </button>
+        <div style={{ flex: 2, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button
+              className="btn-primary"
+              onClick={handleAIOptimize}
+              disabled={!input.trim() || aiLoading}
+              style={{ flex: 1 }}
+            >
+              <Sparkles size={18} />
+              {aiLoading ? 'Optimizing...' : 'Deep optimize with AI'}
+            </button>
+            <button
+              className={`btn-api-key ${showApiKey ? 'active' : ''}`}
+              onClick={() => setShowApiKey(!showApiKey)}
+              title="API Key Settings"
+            >
+              <Key size={20} />
+            </button>
+          </div>
+          
+          {showApiKey && (
+            <div className="settings-panel">
+              <label className="api-key-label">OpenAI API Key (Required for AI)</label>
+              <input
+                type="password"
+                className="api-key-input"
+                placeholder="sk-..."
+                value={apiKey}
+                onChange={handleApiKeyChange}
+              />
+              {error === 'Enter your OpenAI API key to use AI optimization' && (
+                <div style={{ color: 'var(--error-color)', fontSize: '13px', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <AlertCircle size={14} />
+                  {error}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {error && error !== 'Enter your OpenAI API key to use AI optimization' && (
+        <div className="error-message">
+          <AlertCircle size={18} />
+          {error}
         </div>
       )}
 
-      {error && <p style={{ color: '#dc2626', marginTop: 12 }}>{error}</p>}
-
       {activeResult && (
-        <div style={{ marginTop: 24, textAlign: 'left' }}>
-          {/* Optimized prompt */}
-          <div style={{ background: isAI ? '#eff6ff' : '#f0fff0', padding: 16, borderRadius: 8, marginBottom: 14, border: `1px solid ${isAI ? '#bfdbfe' : '#bbf7d0'}` }}>
-            <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>
-              {isAI ? '🤖 AI-Optimized Prompt' : 'Optimized Prompt'}
-            </h3>
-            <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: 14, lineHeight: 1.5 }}>
+        <div className="result-section">
+          
+          <div className="stats-grid">
+            <div className="stat-box">
+              <span className="stat-label">Before</span>
+              <span className="stat-value">~{activeResult.beforeTokens} <small style={{fontSize: 14, color: 'var(--text-secondary)'}}>tok</small></span>
+            </div>
+            <div className="stat-box">
+              <span className="stat-label">After</span>
+              <span className="stat-value highlight">~{activeResult.afterTokens} <small style={{fontSize: 14, color: 'var(--text-secondary)'}}>tok</small></span>
+            </div>
+            <div className="stat-box">
+              <span className="stat-label">Reduction</span>
+              <span className="stat-value" style={{color: 'var(--brand-color)'}}>{activeResult.reduction}%</span>
+            </div>
+          </div>
+
+          <div className={`result-card ${isAI ? 'is-ai' : ''}`}>
+            <div className="result-header">
+              <h3 className="result-title">
+                {isAI ? <Bot size={18} /> : <Zap size={18} />}
+                {isAI ? 'AI-Optimized Prompt' : 'Optimized Prompt'}
+              </h3>
+              <button 
+                onClick={handleCopyOutput}
+                style={{
+                  background: 'transparent', border: 'none', color: 'inherit', 
+                  cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center'
+                }}
+              >
+                {copiedOutput ? <Check size={18} /> : <Copy size={18} />}
+              </button>
+            </div>
+            <pre className="result-content">
               {activeResult.optimizedPrompt}
             </pre>
           </div>
 
-          {/* What changed */}
           {activeResult.changes && activeResult.changes.length > 0 && (
-            <div style={{ background: '#f9fafb', padding: 16, borderRadius: 8, marginBottom: 14, border: '1px solid #e5e7eb' }}>
-              <h3 style={{ margin: '0 0 8px', fontSize: 15 }}>What changed</h3>
-              <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14 }}>
+            <div className="changes-card">
+              <h3>What changed</h3>
+              <ul>
                 {activeResult.changes.map((c, i) => <li key={i}>{c}</li>)}
               </ul>
             </div>
           )}
 
-          {/* Token stats */}
-          <div style={{ background: '#f0f0ff', padding: 16, borderRadius: 8, border: '1px solid #c7d2fe', display: 'flex', gap: 20, flexWrap: 'wrap', fontSize: 14 }}>
-            <div><strong>Before:</strong> ~{activeResult.beforeTokens} tokens</div>
-            <div><strong>After:</strong> ~{activeResult.afterTokens} tokens</div>
-            <div><strong>Saved:</strong> {activeResult.reduction}%</div>
-          </div>
-
-          {/* Cost tradeoff (AI only) */}
-          {isAI && aiResult && (
-            <div style={{ background: '#f0fdf4', padding: 16, borderRadius: 8, marginTop: 14, border: '1px solid #bbf7d0' }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Cost tradeoff</h3>
-              <div style={{ fontSize: 14, lineHeight: 1.8 }}>
-                <div>This optimization cost <strong>{formatCost(aiResult.optimizationCost)}</strong> and saves <strong>{aiResult.beforeTokens - aiResult.afterTokens} tokens</strong> ({aiResult.reduction}%) per use.</div>
-                {aiResult.savingsPerUse > 0 && aiResult.breakEven !== Infinity ? (
-                  <div style={{ marginTop: 8, color: '#166534' }}>
-                    {aiResult.breakEven <= 1
-                      ? `Pays for itself on the first reuse.`
-                      : aiResult.breakEven <= 10
-                        ? `Pays for itself after ${aiResult.breakEven} uses.`
-                        : `Takes ${aiResult.breakEven} uses to break even — may not be worth it for this prompt.`}
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 8, color: '#9a3412' }}>
-                    No token savings — the AI output is the same length or longer.
-                  </div>
-                )}
+          {isAI && (
+            <div className="cost-card">
+              <h3><Sparkles size={18} /> Optimization ROI</h3>
+              <div className="cost-details">
+                This optimization cost <strong>{formatCost(activeResult.optimizationCost)}</strong> and saves <strong>{activeResult.beforeTokens - activeResult.afterTokens} tokens</strong> ({activeResult.reduction}%) per use.
               </div>
+              
+              {activeResult.savingsPerUse > 0 && activeResult.breakEven !== Infinity ? (
+                <div className="roi-positive">
+                  <Check size={16} /> 
+                  {activeResult.breakEven <= 1
+                    ? `Pays for itself on the first reuse.`
+                    : activeResult.breakEven <= 10
+                      ? `Pays for itself after ${activeResult.breakEven} uses.`
+                      : `Takes ${activeResult.breakEven} uses to break even.`}
+                </div>
+              ) : (
+                <div className="roi-negative">
+                  <AlertCircle size={16} /> No token savings achieved (output is same length or longer).
+                </div>
+              )}
             </div>
           )}
+
         </div>
       )}
     </div>

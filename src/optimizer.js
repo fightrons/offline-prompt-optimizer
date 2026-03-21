@@ -255,7 +255,7 @@ function extractTask(text) {
       if (rawVerb.endsWith('ing')) {
         rawVerb = rawVerb.replace(/ing$/, '');
         if (rawVerb.endsWith('t')) rawVerb = rawVerb + 'e'; // "writ" → "write", "creat" → "create"
-        else if (rawVerb.endsWith('k')) {} // "mak" → needs special handling
+        else if (rawVerb.endsWith('k')) { /* "mak" → needs special handling */ }
         if (rawVerb === 'mak') rawVerb = 'make';
         if (rawVerb === 'develop') rawVerb = 'develop'; // already correct
       }
