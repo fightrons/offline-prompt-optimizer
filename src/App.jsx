@@ -2,6 +2,13 @@ import { useState } from 'react'
 import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost } from './optimizer'
 import './App.css'
 
+function formatCost(cost) {
+  if (cost >= 0.01) return `$${cost.toFixed(2)}`
+  if (cost >= 0.001) return `$${cost.toFixed(3)}`
+  if (cost >= 0.0001) return `$${cost.toFixed(4)}`
+  return `<$0.0001`
+}
+
 function App() {
   const [input, setInput] = useState('')
   const [localResult, setLocalResult] = useState(null)
@@ -149,25 +156,22 @@ function App() {
           {isAI && aiResult && (
             <div style={{ background: '#f0fdf4', padding: 16, borderRadius: 8, marginTop: 14, border: '1px solid #bbf7d0' }}>
               <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Cost tradeoff</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, fontSize: 14 }}>
-                <div>
-                  <div style={{ color: '#666' }}>Optimization cost</div>
-                  <div style={{ fontSize: 20, fontWeight: 600 }}>${aiResult.optimizationCost.toFixed(4)}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#666' }}>Saved per future use</div>
-                  <div style={{ fontSize: 20, fontWeight: 600 }}>${aiResult.savingsPerUse.toFixed(4)}</div>
-                </div>
-                <div>
-                  <div style={{ color: '#666' }}>Break-even</div>
-                  <div style={{ fontSize: 20, fontWeight: 600 }}>
-                    {aiResult.breakEven === Infinity ? '—' : `${aiResult.breakEven} use${aiResult.breakEven !== 1 ? 's' : ''}`}
+              <div style={{ fontSize: 14, lineHeight: 1.8 }}>
+                <div>This optimization cost <strong>{formatCost(aiResult.optimizationCost)}</strong> and saves <strong>{aiResult.beforeTokens - aiResult.afterTokens} tokens</strong> ({aiResult.reduction}%) per use.</div>
+                {aiResult.savingsPerUse > 0 && aiResult.breakEven !== Infinity ? (
+                  <div style={{ marginTop: 8, color: '#166534' }}>
+                    {aiResult.breakEven <= 1
+                      ? `Pays for itself on the first reuse.`
+                      : aiResult.breakEven <= 10
+                        ? `Pays for itself after ${aiResult.breakEven} uses.`
+                        : `Takes ${aiResult.breakEven} uses to break even — may not be worth it for this prompt.`}
                   </div>
-                </div>
+                ) : (
+                  <div style={{ marginTop: 8, color: '#9a3412' }}>
+                    No token savings — the AI output is the same length or longer.
+                  </div>
+                )}
               </div>
-              <p style={{ margin: '12px 0 0', fontSize: 13, color: '#166534' }}>
-                Spend ${aiResult.optimizationCost.toFixed(4)} once → save ${aiResult.savingsPerUse.toFixed(4)} every time you use this prompt.
-              </p>
             </div>
           )}
         </div>

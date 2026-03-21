@@ -226,7 +226,7 @@ Final pass fixes common acronym casing: ai→AI, api→API, ml→ML, sql→SQL, 
 
 ## Token Estimation
 
-Simple approximation: `word count × 1.3`. No tokenizer library needed — this is accurate enough for relative comparisons (before vs after).
+Uses `js-tiktoken` with the `gpt-4o-mini` encoding for model-accurate token counts. The encoder is lazy-loaded via dynamic `import()` to keep the main bundle small (~215KB), with a `words × 1.3` heuristic fallback during the brief async load window.
 
 ## Cost Estimation (AI mode only)
 
@@ -234,3 +234,18 @@ When the optional AI deep optimize is used, cost is calculated from GPT-4o-mini 
 - Input: $0.15 per 1M tokens
 - Output: $0.60 per 1M tokens
 - Break-even = optimization cost / savings per future use
+
+## Local vs AI — Independent Paths
+
+The local and AI optimization paths are intentionally kept independent. They do NOT chain (AI does not receive local output as input by default).
+
+**Why separate?** Chaining would defeat the purpose — the AI should demonstrate its own ability to parse messy prompts, not just polish pre-structured output. The two paths serve different use cases:
+
+- **Local**: Free, instant, deterministic. Uses rule-based regex patterns with domain-priority role inference (e.g., DevOps keywords override content verbs).
+- **AI**: Costs tokens, non-deterministic. Uses GPT-4o-mini with a structured system prompt that includes role inference guidance.
+
+**The role inference problem:** A prompt like "Write a guide about setting up CI/CD pipelines" can be interpreted as content writing (verb = "write") or DevOps (topic = CI/CD). The local engine handles this with explicit priority ordering — DevOps keywords are checked before content verbs. The AI system prompt includes a rule nudging the model to infer roles from topic domain, not just the verb:
+
+> *"Infer the Role from the topic domain, not just the verb. 'Write a guide about CI/CD' needs a DevOps engineer, not a content writer."*
+
+If the user runs Quick Optimize first, then clicks Deep Optimize, the AI receives the local output (already structured). If they click Deep Optimize directly, the AI receives the raw input. Both paths are valid.
