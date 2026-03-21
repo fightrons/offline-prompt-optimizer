@@ -1,94 +1,130 @@
-# Prompt Optimizer
+# Offline Prompt Optimizer
 
-A prompt structuring engine that transforms messy, conversational prompts into structured, token-efficient formats. Free local optimization + optional AI deep optimize with cost tradeoff analysis.
+AI is powerful — but most developers waste tokens before they get usable output.
 
-> "Most prompt optimization tools try to shorten prompts. This one structures them — because structure reduces retries, not just tokens."
+Every retry costs money.
+
+This tool fixes that.
+
+Offline Prompt Optimizer transforms messy, conversational prompts into structured, token-efficient instructions — without calling any LLM APIs.
+
+---
+
+## Why this matters
+
+- **Fewer retries** → lower cost  
+- **Clearer prompts** → better outputs  
+- **No API calls** → zero cost optimization  
+
+> AI helps you get answers.  
+> This tool helps you ask better questions.
+
+## Where this fits
+
+This tool is designed to be used before calling an LLM:
+
+`Messy prompt` → `Optimize locally` → `Send to AI`
+
+Instead of:
+`Messy prompt` → `Retry` → `Retry` → `Retry`
+
+It reduces the number of iterations needed to get useful output.
 
 ![From Messy to Masterful: Inside the Prompt Optimizer Engine](docs/internal-logic.png)
 
-## What it does
+## Example
 
-Paste a prompt like this (333 tokens):
+### Before
+"Hey I was wondering if you could maybe help me write something about AI in healthcare..."
 
-```
-Hey, so I was kind of thinking if you could maybe help me out with something.
-I need to create some sort of content, like maybe a blog or article or something
-along those lines, about AI in healthcare, but not too technical...
-```
-
-Get this (75 tokens, 77% reduction):
-
-```
+### After
+```text
 Role: Professional content writer
 
 Task: Write a blog post on AI in healthcare
 
 Constraints:
-- Tone: Professional and accessible (non-technical audience)
+- Tone: Professional and accessible
 - Length: 800–1000 words
 
-Key points:
-- Challenges and risks (e.g., data privacy)
-- Real-world examples and applications
-- Include relevant statistics
-- Provide a clear conclusion
-
-Output requirements:
-- Structured article with headings and sections
+Key Points:
+- Real-world applications
+- Benefits and risks
+- Include statistics
 ```
+
+### Before (Example 2)
+"I need a short script that explains how DNS works, maybe like a YouTube short or TikTok style thing, target audience is normal people not engineers, keep it fun and use an analogy."
+
+### After
+```text
+Role: Technical educator
+
+Task: Write a short video script on how DNS works
+
+Constraints:
+- Tone: Conversational and engaging (non-technical audience)
+- Platform: TikTok / YouTube Shorts
+
+Key Points:
+- Explain using a clear analogy (e.g., internet's phonebook)
+- Emphasize speed and simplicity
+```
+
+## What changed?
+
+- Removed conversational noise and filler language  
+- Extracted intent (task, constraints, requirements)  
+- Converted unstructured input into a structured prompt  
+
+**Result:**
+- Fewer tokens  
+- More predictable outputs  
+- Reduced need for retries  
+
+This transformation reduces token usage and improves output consistency by removing ambiguity.
 
 ## How it works
 
-### Quick Optimize (Free, local, instant)
+1. **Removes conversational noise:** Strips out greetings, filler words, and soft language using local regex heuristics.
+2. **Extracts intent:** Identifies tasks, constraints, tones, lengths, formatting constraints, and semantic key requirements.
+3. **Structured format:** Reconstructs the input into a structured, role-based prompt.
 
-A 3-layer pipeline that runs entirely in the browser:
+All done locally — **no API calls required**. 
 
-**Layer 1 — Cleanup:** Removes filler words, soft language, verbose phrases, politeness fluff, greetings, and normalizes vague content descriptions.
+*(See the deep-dive technical logic in [Optimizer Logic](docs/optimizer-logic.md))*
 
-**Layer 2 — Extract:** Pattern-matches to detect role, task, tone, length, audience, key points (with semantic signals like challenges/risks/statistics/conclusion), and output requirements (format, structure, inclusions).
+## Why not just use AI?
 
-**Layer 3 — Structure:** Assembles extracted components into a `Role / Task / Constraints / Key Points / Output Requirements` format. Includes quality gates (minimum extraction score to structure), deduplication (key points vs task, requirements vs key points), length guards (won't inflate short prompts), and acronym casing fixes.
+LLMs *can* optimize prompts — but they cost tokens.
 
-Key features:
-- **Role inference** — infers appropriate role from task context (11 domain mappings)
-- **Compound tone detection** — "professional but not too boring" → "Professional and accessible"
-- **Negated tone exclusion** — "not too technical" correctly excluded
-- **Range detection** — "800 to 1000 words" → "800–1000 words"
-- **Semantic key points** — detects challenges, examples, statistics, conclusion requests
-- **Challenge example extraction** — "risks... like data privacy" → "Challenges and risks (e.g., data privacy)"
+This tool lets you:
+- Optimize locally **first**
+- Use AI **only when necessary**
 
-### Deep Optimize with AI (Optional, ~$0.001)
+> Optimization itself has a cost. This tool helps you control it.
 
-One LLM call (GPT-4o-mini) for semantic transformation when local rules aren't enough. Shows cost tradeoff:
+## Demo
 
-```
-Optimization cost:   $0.0003
-Saved per future use: $0.0021
-Break-even:          1 use
-```
+Run locally and paste any messy prompt to see:
+- Structured output  
+- Token reduction  
+- Exact changes applied  
 
-## Why hybrid?
-
-Fully local = text formatter. Fully AI = spending tokens to save tokens blindly. The sweet spot: do the free stuff locally, use AI only when it adds real value — and **prove it with numbers**.
-
-> "Optimization itself has a cost. The real skill is knowing when it's worth paying it."
-
-## Tech stack
+## Tech stack & Setup
 
 - React + Vite
-- Zero dependencies beyond React
-- OpenAI API (optional, for deep optimize only)
+- Client-side only (runs entirely in the browser)
+- Optional OpenAI API integration for deep optimization
 
-## Setup
-
-```
+```bash
 npm install
 npm run dev
 ```
 
-No API key needed for local optimization. For AI optimization, enter your OpenAI API key in the app.
+No API key needed for local optimization. For optional deep-AI optimization passes, enter your OpenAI API key directly in the app.
 
-## Documentation
-
-- [Optimizer Logic](docs/optimizer-logic.md) — full technical breakdown of the 3-layer pipeline
-- [Test Cases](docs/test-cases.md) — test prompts with expected outputs and what each tests
+---
+**Documentation**
+- [Optimizer Architecture Breakdown](docs/optimizer-logic.md) 
+- [Prompt Test Cases & Benchmarks](docs/test-cases.md)
