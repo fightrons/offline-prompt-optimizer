@@ -112,11 +112,9 @@ function hardCleanup(text) {
 // ─── Layer 2: Extract structured components ───
 
 function extractRole(text) {
-  // Explicit role patterns
   const rolePatterns = [
-    /(?:you are|act as|be|role:?\s*)\s*(?:a |an )?(.+?)(?:\.|,|$)/im,
-    /(?:imagine you(?:'re| are))\s+(?:a |an )?(.+?)(?:\.|,|$)/im,
-    /(?:as (?:a |an ))(.+?)(?:,|\.|$)/im,
+    /(?:you are|act as|role:?\s*)\s*(?:a |an )?([\w\s]+(?:writer|engineer|developer|designer|analyst|expert|teacher|educator|consultant|advisor|strategist|planner|scientist|researcher|translator|editor|reviewer|manager|architect|specialist))(?:\.|,|$)/im,
+    /(?:imagine you(?:'re| are))\s+(?:a |an )?([\w\s]+(?:writer|engineer|developer|designer|analyst|expert|teacher|educator|consultant|advisor|strategist))(?:\.|,|$)/im,
   ];
   for (const pattern of rolePatterns) {
     const match = text.match(pattern);
@@ -127,32 +125,67 @@ function extractRole(text) {
   return null;
 }
 
+function inferRole(task) {
+  if (!task) return null;
+  const lower = task.toLowerCase();
+
+  if (/\b(blog|article|post|essay|content|copywriting|write)\b/.test(lower)) return 'Professional content writer';
+  if (/\b(code|debug|refactor|function|api|bug|implement|deploy)\b/.test(lower)) return 'Senior software engineer';
+  if (/\b(explain|teach|tutorial|lesson|course|learn)\b/.test(lower)) return 'Technical educator';
+  if (/\b(analyze|data|report|metrics|dashboard|insight)\b/.test(lower)) return 'Data analyst';
+  if (/\b(design|ui|ux|wireframe|mockup|prototype|layout)\b/.test(lower)) return 'UX/UI designer';
+  if (/\b(market|brand|campaign|seo|social media|ads)\b/.test(lower)) return 'Marketing strategist';
+  if (/\b(email|letter|message|memo|announcement)\b/.test(lower)) return 'Professional communicator';
+  if (/\b(review|feedback|evaluate|assess|audit)\b/.test(lower)) return 'Domain expert';
+  if (/\b(plan|strategy|roadmap|proposal|pitch)\b/.test(lower)) return 'Strategic planner';
+  if (/\b(translate|localize|language)\b/.test(lower)) return 'Professional translator';
+  if (/\b(summarize|summary|brief|digest|overview)\b/.test(lower)) return 'Research analyst';
+
+  return 'Domain expert';
+}
+
 function extractTask(text) {
   const cleaned = text
     .replace(/\b(you are|act as|role:?|imagine you).+?[.,]/gi, '')
     .trim();
 
-  // Look for the core action verb
   const taskPatterns = [
-    /(?:help me |help us )?(write|create|build|generate|make|design|develop|draft|compose|produce|prepare)\s+(.+?)(?:\.|$)/im,
-    /(?:^|\.\s*)(explain|describe|summarize|analyze|review|compare|evaluate|list|outline)\s+(.+?)(?:\.|$)/im,
-    /(?:^|\.\s*)(translate|convert|transform|rewrite|edit|fix|debug|refactor|optimize)\s+(.+?)(?:\.|$)/im,
+    /(?:help me |help us )?(write|create|build|generate|design|develop|draft|compose|produce|prepare)\s+(.+?)(?:[.?!]|$)/im,
+    /(?:help me |help us )?(explain|describe|summarize|analyze|review|compare|evaluate|list|outline)\s+(.+?)(?:[.?!]|$)/im,
+    /(?:help me |help us )?(translate|convert|transform|rewrite|edit|fix|debug|refactor|optimize)\s+(.+?)(?:[.?!]|$)/im,
   ];
 
+  // Find the earliest matching task verb in the text
+  let bestMatch = null;
+  let bestIndex = Infinity;
   for (const pattern of taskPatterns) {
     const match = cleaned.match(pattern);
-    if (match) {
+    if (match && match.index < bestIndex) {
+      bestMatch = match;
+      bestIndex = match.index;
+    }
+  }
+
+  if (bestMatch) {
+    const match = bestMatch;
+    {
       const verb = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
       let obj = match[2].trim();
-      // Trim trailing fluff from the task object
       obj = obj.replace(/\s+(that|which|where|with|and|but)\s*$/, '').trim();
       if (obj.length > 5) {
-        return `${verb} ${obj}`;
+        let task = `${verb} ${obj}`;
+
+        // Look anywhere in text for "about/on/regarding" clause to enrich the task
+        const topicMatch = cleaned.match(/\b(?:about|on|regarding|concerning)\s+(?:the\s+)?(.+?)(?:\.|,|$)/im);
+        if (topicMatch && topicMatch[1].trim().length > 3) {
+          task += ` on ${topicMatch[1].trim().replace(/^\w/, c => c.toLowerCase())}`;
+        }
+
+        return task;
       }
     }
   }
 
-  // Fallback: first meaningful sentence
   const sentences = cleaned.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
   if (sentences.length > 0) {
     let task = sentences[0].replace(/^\w/, c => c.toUpperCase());
@@ -196,14 +229,27 @@ function extractConstraints(text) {
   return constraints;
 }
 
+// Clarity compression: "because it provides flexibility" → "Flexibility as a key driver"
+const CLARITY_COMPRESSIONS = [
+  [/\bbecause (?:it |they |this )(?:provides?|offers?|gives?|enables?|allows?) (.+)/gi, (_, thing) => `${thing.replace(/^\w/, c => c.toUpperCase())} as a key driver`],
+  [/\b(?:it |they |this )(?:provides?|offers?|gives?) (.+?) (?:for|to) (.+)/gi, (_, what, whom) => `${what.replace(/^\w/, c => c.toUpperCase())} for ${whom}`],
+  [/\bthe (?:main |primary |key )?(?:reason|benefit|advantage) (?:is |being )(?:that )?(.+)/gi, (_, reason) => reason.replace(/^\w/, c => c.toUpperCase())],
+];
+
+function compressClarity(text) {
+  let result = text;
+  for (const [pattern, replacement] of CLARITY_COMPRESSIONS) {
+    result = result.replace(pattern, replacement);
+  }
+  return result;
+}
+
 function extractKeyPoints(text) {
   const points = [];
   const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
 
-  // Content signal words
   const contentPatterns = [
-    /\b(?:about|cover|mention|discuss|address|talk about|focus on)\s+(.+)/i,
-    /\b(?:include|add|incorporate|feature)\s+(.+)/i,
+    /\b(?:about|cover|mention|discuss|address|talk about|focus on)\s+(?:the )?(.+)/i,
     /\b(?:benefits? of|advantages? of|reasons? for|importance of)\s+(.+)/i,
   ];
 
@@ -212,10 +258,13 @@ function extractKeyPoints(text) {
       const match = sentence.match(pattern);
       if (match) {
         let point = match[1].trim();
-        // Clean up trailing conjunctions and fluff
         point = point.replace(/\s+(that|which|because|since|as|so|and|but)\s.*$/, '');
+        // Apply clarity compression
+        point = compressClarity(point);
         point = point.replace(/^\w/, c => c.toUpperCase());
-        if (point.length > 5 && point.length < 150 && !points.includes(point)) {
+        // Skip very short/generic points
+        const words = point.split(/\s+/).filter(w => w.length > 2);
+        if (point.length > 5 && point.length < 150 && words.length >= 2 && !points.includes(point)) {
           points.push(point);
         }
       }
@@ -223,6 +272,34 @@ function extractKeyPoints(text) {
   }
 
   return points;
+}
+
+// Deduplicate key points against task — don't repeat what the task already says
+function deduplicateAgainstTask(points, task) {
+  if (!task) return points;
+  const taskWords = new Set(task.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+  return points.filter(point => {
+    const pointWords = point.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+    const overlap = pointWords.filter(w => taskWords.has(w)).length;
+    // If more than 60% of the point's words are already in the task, skip it
+    return pointWords.length === 0 || (overlap / pointWords.length) < 0.6;
+  });
+}
+
+// Deduplicate output requirements against key points
+function deduplicateRequirements(requirements, keyPoints) {
+  if (keyPoints.length === 0) return requirements;
+  const pointsLower = keyPoints.map(p => p.toLowerCase());
+  return requirements.filter(req => {
+    const reqLower = req.toLowerCase();
+    // If a requirement's core content is already covered in key points, drop it
+    return !pointsLower.some(p => {
+      const reqWords = reqLower.split(/\s+/).filter(w => w.length > 3);
+      const pWords = p.split(/\s+/).filter(w => w.length > 3);
+      const overlap = reqWords.filter(w => pWords.includes(w)).length;
+      return reqWords.length > 0 && (overlap / reqWords.length) >= 0.5;
+    });
+  });
 }
 
 function extractOutputRequirements(text) {
@@ -253,7 +330,7 @@ function extractOutputRequirements(text) {
   for (const pattern of includePatterns) {
     let match;
     while ((match = pattern.exec(lower)) !== null) {
-      const item = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+      const item = match[1].toLowerCase();
       const req = `Include ${item}`;
       if (!requirements.includes(req)) {
         requirements.push(req);
@@ -328,40 +405,80 @@ export function optimizeLocal(input) {
   // Layer 1: Hard cleanup
   const cleaned = hardCleanup(input);
   if (cleaned !== input.trim()) {
-    changes.push('Removed conversational noise, filler, and soft language');
+    changes.push('Reduced verbosity and removed soft language');
   }
 
   // Layer 2: Extract structure
-  const role = extractRole(input);
+  const explicitRole = extractRole(input);
   const task = extractTask(cleaned);
+  const role = explicitRole || inferRole(task);
   const constraints = extractConstraints(input);
-  const keyPoints = extractKeyPoints(input);
-  const outputRequirements = extractOutputRequirements(input);
+  let keyPoints = extractKeyPoints(cleaned);
+  let outputRequirements = extractOutputRequirements(cleaned);
 
-  const hasStructure = role || task || constraints.length > 0 || keyPoints.length > 0 || outputRequirements.length > 0;
+  // Deduplicate: key points vs task, requirements vs key points
+  keyPoints = deduplicateAgainstTask(keyPoints, task);
+  outputRequirements = deduplicateRequirements(outputRequirements, keyPoints);
 
-  // Layer 3: Build structured output
+  // Quality check: only structure if we have enough signal
+  const structureScore =
+    (task ? 1 : 0) +
+    (constraints.length > 0 ? 1 : 0) +
+    (keyPoints.length > 0 ? 1 : 0) +
+    (outputRequirements.length > 0 ? 1 : 0);
+
   let optimized;
-  if (hasStructure) {
+  if (structureScore >= 2) {
     optimized = buildStructuredPrompt(role, task, constraints, keyPoints, outputRequirements, cleaned);
-    changes.push('Restructured into Role/Task/Constraints/Output format');
-    if (role) changes.push(`Extracted role: "${role}"`);
+    changes.push('Converted unstructured input into structured prompt format');
+    if (!explicitRole && role) changes.push(`Inferred role: "${role}"`);
+    if (explicitRole) changes.push(`Extracted role: "${explicitRole}"`);
     if (constraints.length > 0) changes.push(`Extracted ${constraints.length} constraint(s)`);
-    if (keyPoints.length > 0) changes.push(`Extracted ${keyPoints.length} key point(s)`);
-    if (outputRequirements.length > 0) changes.push(`Extracted ${outputRequirements.length} output requirement(s)`);
+    if (keyPoints.length > 0) changes.push(`Identified ${keyPoints.length} key point(s)`);
+    if (outputRequirements.length > 0) changes.push(`Identified ${outputRequirements.length} output requirement(s)`);
+  } else if (task) {
+    // Partial structure: at least format as task
+    optimized = role ? `Role: ${role}\n\nTask: ${task}` : `Task: ${task}`;
+    if (cleaned !== optimized) {
+      changes.push('Extracted core task from conversational text');
+      if (!explicitRole && role) changes.push(`Inferred role: "${role}"`);
+    } else {
+      optimized = cleaned;
+    }
   } else {
     optimized = cleaned;
+  }
+
+  const beforeTokens = estimateTokens(input);
+  let afterTokens = estimateTokens(optimized);
+
+  // Guard: if structured output is longer than input, fall back to cleaned text
+  if (afterTokens > beforeTokens) {
+    optimized = cleaned;
+    afterTokens = estimateTokens(optimized);
+    // If even cleaned is longer (very short input), return original
+    if (afterTokens >= beforeTokens) {
+      return {
+        optimizedPrompt: input.trim(),
+        changes: ['Prompt is already concise — no optimizations needed'],
+        beforeTokens,
+        afterTokens: beforeTokens,
+        reduction: 0,
+      };
+    }
   }
 
   if (changes.length === 0) {
     changes.push('Prompt is already well-structured — no optimizations needed');
   }
 
-  const beforeTokens = estimateTokens(input);
-  const afterTokens = estimateTokens(optimized);
   const reduction = beforeTokens > 0
     ? Math.round(((beforeTokens - afterTokens) / beforeTokens) * 100)
     : 0;
+
+  if (reduction > 0 && changes.length > 1) {
+    changes.push(`Reduced tokens by ${reduction}% while improving clarity`);
+  }
 
   return { optimizedPrompt: optimized, changes, beforeTokens, afterTokens, reduction };
 }
