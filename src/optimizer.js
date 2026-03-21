@@ -155,17 +155,29 @@ function inferRole(task) {
   if (!task) return null;
   const lower = task.toLowerCase();
 
+  // Specific tech roles first (order matters — most specific wins)
+  if (/\b(react|vue|angular|svelte|frontend|front-end|component|hook|css|html|dom|tailwind)\b/.test(lower)) return 'Frontend developer';
+  if (/\b(api|backend|back-end|server|endpoint|database|sql|node|express|django|flask)\b/.test(lower)) return 'Backend engineer';
+  if (/\b(devops|docker|kubernetes|ci\/cd|pipeline|deploy|terraform|aws|azure|gcp)\b/.test(lower)) return 'DevOps engineer';
+  if (/\b(code|debug|refactor|function|bug|implement|script|algorithm|class|module)\b/.test(lower)) return 'Senior software engineer';
+
+  // Content & communication
   if (/\b(blog|article|post|essay|content|copywriting|write)\b/.test(lower)) return 'Professional content writer';
-  if (/\b(code|debug|refactor|function|api|bug|implement|deploy)\b/.test(lower)) return 'Senior software engineer';
-  if (/\b(explain|teach|tutorial|lesson|course|learn)\b/.test(lower)) return 'Technical educator';
-  if (/\b(analyze|data|report|metrics|dashboard|insight)\b/.test(lower)) return 'Data analyst';
-  if (/\b(design|ui|ux|wireframe|mockup|prototype|layout)\b/.test(lower)) return 'UX/UI designer';
-  if (/\b(market|brand|campaign|seo|social media|ads)\b/.test(lower)) return 'Marketing strategist';
   if (/\b(email|letter|message|memo|announcement)\b/.test(lower)) return 'Professional communicator';
-  if (/\b(review|feedback|evaluate|assess|audit)\b/.test(lower)) return 'Domain expert';
-  if (/\b(plan|strategy|roadmap|proposal|pitch)\b/.test(lower)) return 'Strategic planner';
-  if (/\b(translate|localize|language)\b/.test(lower)) return 'Professional translator';
+
+  // Analytical & research
+  if (/\b(explain|teach|tutorial|lesson|course|learn)\b/.test(lower)) return 'Technical educator';
+  if (/\b(analyze|data|report|metrics|insight)\b/.test(lower)) return 'Data analyst';
   if (/\b(summarize|summary|brief|digest|overview)\b/.test(lower)) return 'Research analyst';
+
+  // Design & strategy
+  if (/\b(design|wireframe|mockup|prototype|layout)\b/.test(lower)) return 'UX/UI designer';
+  if (/\b(market|brand|campaign|seo|social media|ads)\b/.test(lower)) return 'Marketing strategist';
+  if (/\b(plan|strategy|roadmap|proposal|pitch)\b/.test(lower)) return 'Strategic planner';
+
+  // Other
+  if (/\b(review|feedback|evaluate|assess|audit)\b/.test(lower)) return 'Domain expert';
+  if (/\b(translate|localize|language)\b/.test(lower)) return 'Professional translator';
 
   return 'Domain expert';
 }
@@ -214,6 +226,12 @@ function extractTask(text) {
             task += ` on ${topic}`;
           }
         }
+
+        // Final task sanitizer — remove leaked conversational noise
+        task = task
+          .replace(/\b(help me|help us|figure it out|something|stuff|things|some sort of|or something)\b/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
 
         return task;
       }
@@ -341,6 +359,8 @@ function extractKeyPoints(text) {
     [/\b(?:how\s+(?:\w+\s+)?(?:are|is)\s+(?:using|leveraging|implementing|adopting))\b/i, 'Real-world examples and applications'],
     [/\b(?:statistics?|stats|data|numbers|figures|research)\b/i, 'Include relevant statistics'],
     [/\b(?:conclusion|summary|wrap\s*up|closing|final\s+(?:thoughts?|remarks?))\b/i, 'Provide a clear conclusion'],
+    [/\b(?:compare|comparison|difference between|vs\.?|versus)\b/i, 'Compare approaches and highlight differences'],
+    [/\b(?:pros?\s+(?:and|&)\s+cons?|trade-?offs?|advantages?\s+(?:and|&)\s+disadvantages?)\b/i, 'Evaluate pros and cons'],
   ];
 
   for (const [pattern, label] of semanticSignals) {
@@ -416,13 +436,25 @@ function deduplicateAgainstTask(points, task) {
   });
 }
 
-// Deduplicate output requirements against key points
+// Deduplicate output requirements against key points + within themselves
 function deduplicateRequirements(requirements, keyPoints) {
-  if (keyPoints.length === 0) return requirements;
-  const pointsLower = keyPoints.map(p => p.toLowerCase());
-  return requirements.filter(req => {
+  // First: deduplicate within requirements (e.g., "Include statistics" vs "Include relevant statistics")
+  const unique = [];
+  for (const req of requirements) {
     const reqLower = req.toLowerCase();
-    // If a requirement's core content is already covered in key points, drop it
+    const reqWords = reqLower.split(/\s+/).filter(w => w.length > 3);
+    const isDupe = unique.some(existing => {
+      const exWords = existing.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+      const overlap = reqWords.filter(w => exWords.includes(w)).length;
+      return reqWords.length > 0 && exWords.length > 0 && (overlap / Math.min(reqWords.length, exWords.length)) >= 0.5;
+    });
+    if (!isDupe) unique.push(req);
+  }
+
+  if (keyPoints.length === 0) return unique;
+  const pointsLower = keyPoints.map(p => p.toLowerCase());
+  return unique.filter(req => {
+    const reqLower = req.toLowerCase();
     return !pointsLower.some(p => {
       const reqWords = reqLower.split(/\s+/).filter(w => w.length > 3);
       const pWords = p.split(/\s+/).filter(w => w.length > 3);
@@ -561,6 +593,17 @@ export function optimizeLocal(input) {
   const constraints = extractConstraints(input);
   let keyPoints = extractKeyPoints(cleaned);
   let outputRequirements = extractOutputRequirements(cleaned);
+
+  // Split: "Include/Add/Provide X" in key points → move to requirements
+  const promoted = [];
+  keyPoints = keyPoints.filter(p => {
+    if (/^(Include|Add|Provide)\b/i.test(p)) {
+      if (!outputRequirements.includes(p)) promoted.push(p);
+      return false;
+    }
+    return true;
+  });
+  outputRequirements = [...outputRequirements, ...promoted];
 
   // Deduplicate: key points vs task, requirements vs key points
   keyPoints = deduplicateAgainstTask(keyPoints, task);
