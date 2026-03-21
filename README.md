@@ -1,37 +1,53 @@
 # Prompt Optimizer
 
-A 100% local, offline prompt optimizer. Paste a prompt, get a shorter one — no API calls, no tokens spent.
+Hybrid prompt optimizer: free local cleanup + optional AI deep optimization with cost tradeoff analysis.
 
-## Why
+## Why hybrid?
 
-Using an LLM to optimize prompts defeats the purpose — you're spending tokens to save tokens. This tool runs entirely in the browser with rule-based transformations.
+Fully local = glorified text formatter. Fully AI = spending tokens to save tokens blindly. The sweet spot: do the free stuff locally, use AI only when it adds real value — and **prove it with numbers**.
 
-## What it does
-
-1. You paste a prompt
-2. Click "Optimize"
-3. It returns:
-   - A shorter, cleaner prompt
-   - What changed (list of transformations applied)
-   - Token estimate before/after + % reduction
+> "Spend 1x tokens → save 10x tokens downstream."
 
 ## How it works
 
-The optimizer applies these transformations locally:
+### Step 1 — Quick Optimize (Free, local)
 
-- **Verbose phrase replacement** — 40+ patterns like "in order to" → "to", "due to the fact that" → "because", "provide a summary of" → "summarize"
-- **Filler word removal** — strips "please", "just", "really", "basically", "honestly", "I think", "I believe", hedging language
-- **Imperative conversion** — "Can you...", "Could you..." → direct commands
-- **Redundant instruction removal** — "make sure that", "please note that", "keep in mind that", "don't forget to"
-- **Duplicate line removal** — deduplicates repeated lines
-- **Whitespace cleanup** — collapses excess spaces/newlines
-- **Token estimation** — word count × 1.3 (simple approximation)
+Rule-based transformations that run instantly in the browser:
+
+- **Verbose phrase replacement** — 40+ patterns ("in order to" → "to", "due to the fact that" → "because")
+- **Filler word removal** — strips "please", "just", "basically", hedging language
+- **Imperative conversion** — "Can you..." → direct commands
+- **Redundant instruction removal** — "make sure that", "please note that"
+- **Duplicate line removal** and whitespace cleanup
+- **Structural analysis** — detects missing role, constraints, output format, and examples
+
+### Step 2 — Deep Optimize with AI (Optional, ~$0.001)
+
+One LLM call (GPT-4o-mini) that does real semantic transformation:
+
+- Adds a clear role if missing
+- Restructures complex prompts into sections
+- Adds constraints and output format
+- Rewrites for maximum clarity and token efficiency
+- Preserves original intent completely
+
+### Step 3 — Cost Tradeoff Display
+
+After AI optimization, shows:
+
+```
+Optimization cost:   $0.0003
+Saved per future use: $0.0021
+Break-even:          1 use
+```
+
+This is the killer insight: **one optimization call pays for itself on the first reuse**.
 
 ## Tech stack
 
 - React + Vite
-- Zero external dependencies beyond React
-- Single-page app, ~130 lines of UI + ~150 lines of optimizer logic
+- Zero dependencies beyond React
+- OpenAI API (optional, for deep optimize only)
 
 ## Setup
 
@@ -40,12 +56,4 @@ npm install
 npm run dev
 ```
 
-Opens at `http://localhost:5173/`.
-
-## Build
-
-```
-npm run build
-```
-
-Output goes to `dist/` — static files, deploy anywhere.
+No API key needed for local optimization. For AI optimization, enter your OpenAI API key in the app (stored in localStorage, sent only to OpenAI).
