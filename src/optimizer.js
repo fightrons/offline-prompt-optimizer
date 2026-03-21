@@ -4,13 +4,27 @@
 // Layer 3: Rebuild as structured prompt
 // Optional: AI deep optimize
 
-// ─── Token estimation ───
+// ─── Token estimation (tiktoken — model-accurate, lazy-loaded) ───
+
+let enc = null;
+
+async function getEncoder() {
+  if (!enc) {
+    const { encodingForModel } = await import('js-tiktoken');
+    enc = encodingForModel('gpt-4o-mini');
+  }
+  return enc;
+}
 
 export function estimateTokens(text) {
   if (!text.trim()) return 0;
-  const words = text.trim().split(/\s+/).filter(Boolean).length;
-  return Math.ceil(words * 1.3);
+  if (enc) return enc.encode(text).length;
+  // Fallback until encoder loads — heuristic
+  return Math.ceil(text.trim().split(/\s+/).length * 1.3);
 }
+
+// Pre-load encoder on import so it's ready by the time user clicks optimize
+getEncoder();
 
 // GPT-4o-mini pricing: $0.15 per 1M input tokens, $0.60 per 1M output tokens
 const COST_PER_INPUT_TOKEN = 0.15 / 1_000_000;
@@ -156,7 +170,7 @@ function inferRole(task) {
   const lower = task.toLowerCase();
 
   // Specific tech roles first (order matters — most specific wins)
-  if (/\b(react|vue|angular|svelte|frontend|front-end|component|hook|css|html|dom|tailwind)\b/.test(lower)) return 'Frontend developer';
+  if (/\b(react|vue|angular|svelte|frontend|front-end|component|hook|css|html|dom|tailwind|application|app)\b/.test(lower)) return 'Frontend developer';
   if (/\b(api|backend|back-end|server|endpoint|database|sql|node|express|django|flask)\b/.test(lower)) return 'Backend engineer';
   if (/\b(devops|docker|kubernetes|ci\/cd|pipeline|deploy|terraform|aws|azure|gcp)\b/.test(lower)) return 'DevOps engineer';
   if (/\b(code|debug|refactor|function|bug|implement|script|algorithm|class|module)\b/.test(lower)) return 'Senior software engineer';
@@ -307,6 +321,48 @@ function extractConstraints(text) {
     constraints.push(`Audience: ${audienceMatch[1].charAt(0).toUpperCase() + audienceMatch[1].slice(1)}`);
   }
 
+  // Tech stack detection — frameworks always match, general languages need "in/with/use" context
+  const frameworkPatterns = [
+    [/\b(react(?:\.?js)?|reactjs)\b/i, 'React.js'],
+    [/\b(next\.?js|nextjs)\b/i, 'Next.js'],
+    [/\b(node\.?js|nodejs)\b/i, 'Node.js'],
+    [/\b(vue\.?js|vuejs)\b/i, 'Vue.js'],
+    [/\b(angular)\b/i, 'Angular'],
+    [/\b(svelte)\b/i, 'Svelte'],
+    [/\b(django|flask|fastapi|express)\b/i, null],
+    [/\b(tailwind(?:\s*css)?)\b/i, 'Tailwind CSS'],
+  ];
+  for (const [pattern, label] of frameworkPatterns) {
+    const match = lower.match(pattern);
+    if (match) {
+      const tech = label || match[1].charAt(0).toUpperCase() + match[1].slice(1);
+      constraints.push(`Use ${tech}`);
+    }
+  }
+  // General languages only when explicitly chosen as tech stack ("in python", "use typescript", "with python")
+  const langTechPatterns = [
+    [/\b(?:in|with|use|using)\s+(python)\b/i, 'Python'],
+    [/\b(?:in|with|use|using)\s+(typescript|ts)\b/i, 'TypeScript'],
+    [/\b(?:in|with|use|using)\s+(javascript|js)\b/i, 'JavaScript'],
+    [/\b(?:in|with|use|using)\s+(rust)\b/i, 'Rust'],
+    [/\b(?:in|with|use|using)\s+(go(?:lang)?)\b/i, 'Go'],
+  ];
+  for (const [pattern, label] of langTechPatterns) {
+    if (pattern.test(lower)) {
+      constraints.push(`Use ${label}`);
+    }
+  }
+
+  // No-database constraint
+  if (/\bno\s+database\b/i.test(lower) || /\bwithout\s+(?:a\s+)?database\b/i.test(lower) || /\bignore\s+(?:any\s+)?database\b/i.test(lower) || /\bdon'?t\s+(?:need|want|use)\s+(?:a\s+)?database\b/i.test(lower)) {
+    constraints.push('No database required');
+  }
+
+  // Responsive / mobile-friendly UI
+  if (/\bresponsive\b/i.test(lower) || /\bmobile[- ]?friendly\b/i.test(lower) || /\bmobile\s+users?\b/i.test(lower)) {
+    constraints.push('Responsive UI (mobile-friendly)');
+  }
+
   return constraints;
 }
 
@@ -393,6 +449,16 @@ function extractKeyPoints(text) {
         if (!points.includes(label)) points.push(label);
       }
     }
+  }
+
+  // Feature flag detection — offline/local, AI, etc.
+  if (/\b(?:offline|locally|local\s+(?:system|mode|processing)|without\s+internet)\b/i.test(lower)) {
+    const offlinePoint = 'Optimize prompts locally (offline)';
+    if (!points.includes(offlinePoint)) points.push(offlinePoint);
+  }
+  if (/\b(?:optimi\w+\s+with\s+ai|ai[- ]?(?:based|powered)\s+optimi\w+|facility\s+where\s+optimi\w+\s+with\s+ai|optional\s+ai)\b/i.test(lower)) {
+    const aiPoint = 'Provide optional AI-based optimization';
+    if (!points.includes(aiPoint)) points.push(aiPoint);
   }
 
   // Mark semantic entries so we can distinguish them from content-pattern entries
@@ -516,6 +582,13 @@ function extractOutputRequirements(text) {
     requirements.push('Structured article with headings and sections');
   }
 
+  // Clean / usable UI requirement
+  if (/\b(?:clean|usable|good|nice)\s+(?:ui|interface|design)\b/i.test(lower)
+    || /\bresponsive\s+(?:in\s+)?ui\b/i.test(lower)
+    || /\bui\b/i.test(lower)) {
+    requirements.push('Clean and usable UI');
+  }
+
   return requirements;
 }
 
@@ -594,10 +667,10 @@ export function optimizeLocal(input) {
   let keyPoints = extractKeyPoints(cleaned);
   let outputRequirements = extractOutputRequirements(cleaned);
 
-  // Split: "Include/Add/Provide X" in key points → move to requirements
+  // Split: "Include/Add X" in key points → move to requirements (but not "Provide optional..." feature descriptions)
   const promoted = [];
   keyPoints = keyPoints.filter(p => {
-    if (/^(Include|Add|Provide)\b/i.test(p)) {
+    if (/^(Include|Add)\b/i.test(p) || /^Provide\s+(?:a\s+)?(?:clear|relevant|detailed)\b/i.test(p)) {
       if (!outputRequirements.includes(p)) promoted.push(p);
       return false;
     }
