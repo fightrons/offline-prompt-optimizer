@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost } from './optimizer/index.js'
-import { Settings, Copy, Check, Sparkles, Zap, AlertCircle, Bot, Key } from 'lucide-react'
+import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost, countAnthropicTokens } from './optimizer/index.js'
+import { Settings, Copy, Check, Sparkles, Zap, AlertCircle, Bot, Key, Trash2 } from 'lucide-react'
 import './App.css'
 
 function formatCost(cost) {
@@ -17,16 +17,32 @@ function App() {
   const [aiLoading, setAiLoading] = useState(false)
   const [error, setError] = useState('')
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_api_key') || '')
+  const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('anthropic_api_key') || '')
   const [showApiKey, setShowApiKey] = useState(false)
+  const [claudeTokens, setClaudeTokens] = useState(null) // { before, after }
 
   const [copiedInput, setCopiedInput] = useState(false)
   const [copiedOutput, setCopiedOutput] = useState(false)
 
   const handleLocalOptimize = () => {
     if (!input.trim()) return
-    setLocalResult(optimizeLocal(input))
+    const result = optimizeLocal(input)
+    setLocalResult(result)
     setAiResult(null)
     setError('')
+    setClaudeTokens(null)
+
+    // Fire Anthropic token count in background (free API call)
+    if (anthropicKey.trim()) {
+      Promise.all([
+        countAnthropicTokens(input, anthropicKey),
+        countAnthropicTokens(result.optimizedPrompt, anthropicKey),
+      ]).then(([before, after]) => {
+        if (before !== null && after !== null) {
+          setClaudeTokens({ before, after })
+        }
+      })
+    }
   }
 
   const handleAIOptimize = async () => {
@@ -65,7 +81,20 @@ function App() {
         savingsPerUse,
         breakEven,
       })
+      setClaudeTokens(null)
       setShowApiKey(false)
+
+      // Fire Anthropic token count in background
+      if (anthropicKey.trim()) {
+        Promise.all([
+          countAnthropicTokens(input, anthropicKey),
+          countAnthropicTokens(optimized, anthropicKey),
+        ]).then(([before, after]) => {
+          if (before !== null && after !== null) {
+            setClaudeTokens({ before, after })
+          }
+        })
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -77,6 +106,19 @@ function App() {
     const key = e.target.value
     setApiKey(key)
     localStorage.setItem('openai_api_key', key)
+  }
+
+  const handleAnthropicKeyChange = (e) => {
+    const key = e.target.value
+    setAnthropicKey(key)
+    localStorage.setItem('anthropic_api_key', key)
+  }
+
+  const handleClearInput = () => {
+    setInput('')
+    setLocalResult(null)
+    setAiResult(null)
+    setError('')
   }
 
   const handleCopyInput = async () => {
@@ -113,9 +155,16 @@ function App() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-        <button className="copy-button" onClick={handleCopyInput} title="Copy Input">
-          {copiedInput ? <Check size={16} /> : <Copy size={16} />}
-        </button>
+        <div className="textarea-actions">
+          {input && (
+            <button className="icon-btn clear" onClick={handleClearInput} title="Clear Input">
+              <Trash2 size={16} />
+            </button>
+          )}
+          <button className="icon-btn copy" onClick={handleCopyInput} title="Copy Input">
+            {copiedInput ? <Check size={16} /> : <Copy size={16} />}
+          </button>
+        </div>
       </div>
 
       <div className="action-buttons">
@@ -157,6 +206,14 @@ function App() {
                 value={apiKey}
                 onChange={handleApiKeyChange}
               />
+              <label className="api-key-label" style={{ marginTop: '12px' }}>Anthropic API Key (Optional — real Claude token counts)</label>
+              <input
+                type="password"
+                className="api-key-input"
+                placeholder="sk-ant-..."
+                value={anthropicKey}
+                onChange={handleAnthropicKeyChange}
+              />
               {error === 'Enter your OpenAI API key to use AI optimization' && (
                 <div style={{ color: 'var(--error-color)', fontSize: '13px', marginTop: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <AlertCircle size={14} />
@@ -182,14 +239,25 @@ function App() {
             <div className="stat-box">
               <span className="stat-label">Before</span>
               <span className="stat-value">~{activeResult.beforeTokens} <small style={{ fontSize: 14, color: 'var(--text-secondary)' }}>tok</small></span>
+              {claudeTokens && (
+                <span className="stat-sub">{claudeTokens.before} <small>Claude tok</small></span>
+              )}
             </div>
             <div className="stat-box">
               <span className="stat-label">After</span>
               <span className="stat-value highlight">~{activeResult.afterTokens} <small style={{ fontSize: 14, color: 'var(--text-secondary)' }}>tok</small></span>
+              {claudeTokens && (
+                <span className="stat-sub">{claudeTokens.after} <small>Claude tok</small></span>
+              )}
             </div>
             <div className="stat-box">
               <span className="stat-label">Reduction</span>
               <span className="stat-value" style={{ color: 'var(--brand-color)' }}>{activeResult.reduction}%</span>
+              {claudeTokens && claudeTokens.before > 0 && (
+                <span className="stat-sub" style={{ color: 'var(--brand-color)' }}>
+                  {Math.round(((claudeTokens.before - claudeTokens.after) / claudeTokens.before) * 100)}% <small>Claude</small>
+                </span>
+              )}
             </div>
           </div>
 

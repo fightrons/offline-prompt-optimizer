@@ -1,4 +1,4 @@
-import { estimateTokens, estimateCost, getEncoder } from './tokens.js';
+import { estimateTokens, estimateCost, countAnthropicTokens, getEncoder } from './tokens.js';
 import { hardCleanup } from './utils.js';
 import { detectPromptType, extractWorkflowComponents, buildWorkflowPrompt } from './extractors/workflow.js';
 import { extractRole, inferRole, extractTask, extractConstraints, extractKeyPoints, extractOutputRequirements, deduplicateAgainstTask, deduplicateRequirements, buildStructuredPrompt } from './extractors/content.js';
@@ -6,7 +6,7 @@ import { extractRole, inferRole, extractTask, extractConstraints, extractKeyPoin
 // Pre-load encoder on import so it's ready by the time user clicks optimize
 getEncoder();
 
-export { estimateTokens, estimateCost };
+export { estimateTokens, estimateCost, countAnthropicTokens };
 export { optimizeWithAI } from './ai.js';
 
 export function optimizeLocal(input) {

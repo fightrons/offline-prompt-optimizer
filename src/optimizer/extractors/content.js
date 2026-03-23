@@ -58,6 +58,12 @@ export function extractTask(text) {
     .replace(/\b(you are|act as|role:?|imagine you).+?[.,]/gi, '')
     .trim();
 
+  // Core QA/Engineering Intent Override
+  if (/\b(?:track(?:ing)?|analyz(?:e|ing)|monitor(?:ing)?|log(?:ging)?)\s+(?:bugs?|issues?|errors?|crashes?)\b/i.test(cleaned) ||
+      /\b(?:github\s*issues?|jira\s*tickets?|sentry)\b/i.test(cleaned) && /\b(?:bugs?|issues?|patterns?|root\s*causes?)\b/i.test(cleaned)) {
+    return 'Analyze and track software bugs to identify patterns, root causes, and improve system stability';
+  }
+
   const taskPatterns = [
     // Gerund intent: "building X", "creating X" — often after cleanup strips "thinking about"
     /\b(building|creating|developing|designing|writing|making)\s+(?:something\s+like\s+)?(.+?)(?:[.?!]|$)/im,
@@ -291,9 +297,9 @@ export function extractConstraints(text) {
   }
 
   // Avoid over-engineering — only for product/system building context, not writing style
-  if (/\b(?:over[- ]?engineer|too\s+(?:fancy|complex|complicated)|avoid\s+(?:that|over))\b/i.test(lower)
+  if (/\b(?:over[- ]?engineer|too\s+(?:fancy|complex|complicated))\b/i.test(lower)
     || (/\bkeep\s+it\s+simple\b/i.test(lower) && /\b(?:mvp|saas|product|build|develop|implement|architect)\b/i.test(lower))
-    || /\bmvp\b/i.test(lower)) {
+    || /\b(?:mvp|saas|startup)\b/i.test(lower)) {
     constraints.push('Avoid over-engineering');
   }
 
@@ -340,9 +346,9 @@ export function extractKeyPoints(text, originalText) {
     [/\b(?:challenges?|risks?|downsides?|drawbacks?|limitations?|concerns?|problems?)\b/i, null],
     [/\b(?:real[- ]?world|practical)\s*(?:examples?|cases?|use cases?|applications?)\b/i, 'Real-world examples and applications'],
     [/\b(?:how\s+(?:\w+\s+)?(?:are|is)\s+(?:using|leveraging|implementing|adopting))\b/i, 'Real-world examples and applications'],
-    [/\b(?:statistics?|stats|data|numbers|figures|research)\b/i, 'Include relevant statistics'],
+    [/\b(?:include|provide|add|show|with)\s+(?:relevant\s+)?(?:statistics?|stats|numerical\s+data|figures)\b/i, 'Include relevant statistics'],
     [/\b(?:conclusion|summary|wrap\s*up|closing|final\s+(?:thoughts?|remarks?))\b/i, 'Provide a clear conclusion'],
-    [/\b(?:compare|comparison|difference between|vs\.?|versus|pros?\s+(?:and|&)\s+cons?|trade-?offs?|advantages?\s+(?:and|&)\s+disadvantages?)\b/i, null], // handled below with tool detection
+    [/\b(?:compare|comparison|difference between|pros?\s+(?:and|&)\s+cons?|trade-?offs?|advantages?\s+(?:and|&)\s+disadvantages?)\b/i, null], // handled below with tool detection
     [/\b(?:common\s+)?(?:mistakes?|pitfalls?|gotchas?|anti-?patterns?)\b/i, null], // handled below with example extraction
   ];
 
@@ -379,7 +385,7 @@ export function extractKeyPoints(text, originalText) {
     }
 
     // Compare/pros-cons — detect specific tools being compared
-    if (/\b(?:compare|comparison|difference|vs\.?|versus|pros?\s+(?:and|&)\s+cons?|trade-?offs?)\b/i.test(lower) && pattern.source.includes('compare')) {
+    if (/\b(?:compare|comparison|difference|pros?\s+(?:and|&)\s+cons?|trade-?offs?)\b/i.test(lower) && pattern.source.includes('compare')) {
       // Try to find specific tools/approaches being compared
       const toolPairs = lower.match(/\b(github\s*actions|jenkins|gitlab|circleci|travis)\b/gi);
       if (toolPairs && toolPairs.length >= 2) {
@@ -439,20 +445,20 @@ export function extractKeyPoints(text, originalText) {
     if (!points.includes(point)) points.push(point);
   }
 
+  // MVP/product signals (only if explicitly building an MVP/SaaS)
+  if (/\b(?:build|develop|create|implement|launch)\b/i.test(lower) && /\b(?:mvp|minimum viable product|saas|startup)\b/i.test(lower)) {
+    const mvpPoint = 'Define MVP scope and core features';
+    if (!points.includes(mvpPoint)) points.push(mvpPoint);
+  }
+
   // Feature flag detection — offline/local, AI, etc.
   if (/\b(?:offline|locally|local\s+(?:system|mode|processing)|without\s+internet)\b/i.test(lower)) {
     const offlinePoint = 'Optimize prompts locally (offline)';
     if (!points.includes(offlinePoint)) points.push(offlinePoint);
   }
-  if (/\b(?:optimi\w+\s+with\s+ai|ai[- ]?(?:based|powered)\s+optimi\w+|facility\s+where\s+optimi\w+\s+with\s+ai|optional\s+ai)\b/i.test(lower)) {
+  if (/\b(?:optional\s+)?ai[- ]?(?:based|powered)?\s+optimi\w+\b/i.test(lower)) {
     const aiPoint = 'Provide optional AI-based optimization';
     if (!points.includes(aiPoint)) points.push(aiPoint);
-  }
-
-  // MVP/product signals
-  if (/\b(?:mvp|minimum viable|saas|product|startup)\b/i.test(lower)) {
-    const mvpPoint = 'Define MVP scope and core features';
-    if (!points.includes(mvpPoint)) points.push(mvpPoint);
   }
 
   // AI feature integration (generic — not prompt optimization specific)
@@ -497,7 +503,7 @@ export function extractKeyPoints(text, originalText) {
   }
 
   // Validation strategy
-  if (/\b(?:validate|validation|user\s+feedback|test\s+(?:the\s+)?(?:idea|concept|market)|metrics|measure)\b/i.test(lower)) {
+  if (isBuildingContext && /\b(?:validate|validation|user\s+feedback|test\s+(?:the\s+)?(?:idea|concept|market)|metrics|measure)\b/i.test(lower)) {
     const point = 'Define validation strategy (user feedback, metrics)';
     if (!points.includes(point)) points.push(point);
   }
@@ -619,17 +625,14 @@ export function extractOutputRequirements(text) {
     }
   }
 
-  // Structured article / headings detection
-  if (/\b(?:structured|well-structured|organized)\s*(?:article|post|essay|document|response)\b/i.test(lower)
-    || /\b(?:headings?|sections?|subheadings?)\b/i.test(lower)
-    || /\beasy to read\b/i.test(lower)) {
+  // Structured article / headings detection (ONLY for content tasks)
+  if (/\b(?:format|structure)\b.*?\b(?:headings?|sections?|subheadings?)\b/i.test(lower)
+    || /\b(?:structured|well-structured|organized)\s*(?:article|post|essay|document|response)\b/i.test(lower)) {
     requirements.push('Structured article with headings and sections');
   }
 
-  // Clean / usable UI requirement
-  if (/\b(?:clean|usable|good|nice)\s+(?:ui|interface|design)\b/i.test(lower)
-    || /\bresponsive\s+(?:in\s+)?ui\b/i.test(lower)
-    || /\bui\b/i.test(lower)) {
+  // Clean / usable UI requirement - strict matching to avoid triggering on "UI / Backend"
+  if (/\b(?:clean|usable|good|nice|better|improve)\s+(?:the\s+)?(?:ui|interface|user\s+interface)\b/i.test(lower)) {
     requirements.push('Clean and usable UI');
   }
 

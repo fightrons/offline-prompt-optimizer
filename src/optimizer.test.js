@@ -513,7 +513,7 @@ describe('Test 8: Workflow Prompt — Content Research Pipeline', () => {
   });
 
   it('should extract data sources', () => {
-    expect(result.optimizedPrompt).toMatch(/Data Sources:/m);
+    expect(result.optimizedPrompt).toMatch(/Inputs:/m);
     expect(result.optimizedPrompt).toMatch(/livemint/i);
     expect(result.optimizedPrompt).toMatch(/hbr\.org/i);
   });
@@ -526,7 +526,7 @@ describe('Test 8: Workflow Prompt — Content Research Pipeline', () => {
   });
 
   it('should extract steps', () => {
-    expect(result.optimizedPrompt).toMatch(/Steps:/m);
+    expect(result.optimizedPrompt).toMatch(/Key Tasks:/m);
   });
 
   it('should identify tools', () => {
@@ -639,7 +639,7 @@ describe('Test 9: Financial Insights Workflow — Role-Intent Alignment', () => 
   });
 
   it('should extract data source categories', () => {
-    expect(result.optimizedPrompt).toMatch(/Data Sources:/m);
+    expect(result.optimizedPrompt).toMatch(/Inputs:/m);
     expect(result.optimizedPrompt).toMatch(/Finance & Business/i);
     expect(result.optimizedPrompt).toMatch(/Small Business/i);
     expect(result.optimizedPrompt).toMatch(/Economic/i);
@@ -701,6 +701,76 @@ describe('Test 9: Financial Insights Workflow — Role-Intent Alignment', () => 
   it('should restructure effectively (no excessive expansion)', () => {
     expect(result.reduction).toBeGreaterThan(-15);
   });
+});
+
+// ─── Test 10: Product Manager Roadmap Workflow ───
+
+describe('Test 10: Product Manager Roadmap Workflow', () => {
+    const input = `Hey, I need help figuring out how to organize and track product ideas and roadmap planning for a SaaS application, but I’m not really sure how to structure it properly. This is for a product manager who wants to prioritize features, track user feedback, and align development with business goals.
+
+The goal is not just to list features, but to understand what should be built next and why — like identifying high-impact features, grouping similar requests, and aligning them with metrics like user growth, retention, or revenue.
+
+We have multiple sources of input like:
+- User feedback (support tickets, surveys, emails)
+- Feature requests (from internal teams and customers)
+- Product analytics (usage data, drop-offs, engagement metrics)
+- Competitor analysis and market trends
+
+I want you to go through these inputs regularly and extract meaningful insights, not just raw data.
+
+What I want you to do is:
+
+First go to this Google Sheet:
+https://docs.google.com/spreadsheets/d/example-product-sheet/edit#gid=0
+
+Then update it with the following:
+
+Column A: Date  
+Column B: Feature / Idea  
+Column C: Problem it solves  
+Column D: Impact (Low / Medium / High)  
+Column E: Effort (Low / Medium / High)  
+Column F: Priority Score (based on impact vs effort)  
+Column G: Source (User Feedback / Analytics / Market / Internal)  
+Column H: Notes / Context  
+
+Make sure you don’t just copy inputs — try to synthesize them.
+Group similar ideas where possible.
+Focus on things that actually move business metrics, not just “nice-to-have” features.
+Also try to highlight why something should be prioritized, not just what it is.
+Avoid duplication and keep everything structured cleanly.`;
+
+    const { optimizedPrompt: output, changes } = optimizeLocal(input);
+
+    it('should detect as workflow prompt', () => {
+        expect(changes).toContain('Detected workflow prompt — used structured workflow format');
+    });
+
+    it('should infer role as Product Manager', () => {
+        expect(output).toMatch(/Role: Product Manager/i);
+    });
+
+    it('should extract correct objective', () => {
+        expect(output).toMatch(/Objective:/i);
+        expect(output).toMatch(/Understand what should be built next and why/i);
+    });
+
+    it('should extract input sources', () => {
+         expect(output).toMatch(/Inputs:/i);
+         expect(output).toMatch(/User feedback/i);
+         expect(output).toMatch(/Product analytics/i);
+    });
+
+    it('should extract output format columns', () => {
+        expect(output).toMatch(/Column E: Effort — Low \/ Medium \/ High/i);
+        expect(output).toMatch(/Column F: Priority Score — based on impact vs effort/i);
+    });
+    
+    it('should NOT inject content hallucinations (validate, pros/cons, stats)', () => {
+        expect(output).not.toMatch(/Define validation strategy/i);
+        expect(output).not.toMatch(/Include relevant statistics/i);
+        expect(output).not.toMatch(/Compare approaches/i);
+    });
 });
 
 // ─── Token Estimation ───
