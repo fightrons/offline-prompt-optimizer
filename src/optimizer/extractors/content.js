@@ -14,45 +14,6 @@ export function extractRole(text) {
   return null;
 }
 
-export function inferRole(task) {
-  if (!task) return null;
-  const lower = task.toLowerCase();
-
-  // Product/MVP/SaaS — needs a product engineer, not just a coder
-  if (/\b(saas|mvp|product|startup|launch|go-to-market)\b/.test(lower) || /\bplan\b/.test(lower) && /\b(build|develop|application|app)\b/.test(lower)) return 'Product engineer';
-
-  // DevOps detection — must come before content check since "write a guide about CI/CD" is DevOps, not content
-  if (/\b(devops|docker|kubernetes|ci\/cd|pipeline|deploy|terraform|aws|azure|gcp|github\s*actions|jenkins|ansible)\b/.test(lower)) return 'DevOps engineer';
-
-  // Content tasks — "write a blog post about React" = content writer, not developer
-  // But only when the format is content-oriented (blog, article, essay), not technical guides about infra/code
-  const isContentTask = /\b(blog|article|post|essay|content|copywriting)\b/.test(lower)
-    || /^write\b/i.test(lower.trim());
-  if (isContentTask) return 'Professional content writer';
-
-  // Specific tech roles (order matters — most specific wins)
-  if (/\b(react|vue|angular|svelte|frontend|front-end|component|hook|css|html|dom|tailwind|application|app)\b/.test(lower)) return 'Frontend developer';
-  if (/\b(api|backend|back-end|server|endpoint|database|sql|node|express|django|flask)\b/.test(lower)) return 'Backend engineer';
-  if (/\b(code|debug|refactor|function|bug|implement|script|algorithm|class|module)\b/.test(lower)) return 'Senior software engineer';
-  if (/\b(email|letter|message|memo|announcement)\b/.test(lower)) return 'Professional communicator';
-
-  // Analytical & research
-  if (/\b(explain|teach|tutorial|lesson|course|learn)\b/.test(lower)) return 'Technical educator';
-  if (/\b(analyze|data|report|metrics|insight)\b/.test(lower)) return 'Data analyst';
-  if (/\b(summarize|summary|brief|digest|overview)\b/.test(lower)) return 'Research analyst';
-
-  // Design & strategy
-  if (/\b(design|wireframe|mockup|prototype|layout)\b/.test(lower)) return 'UX/UI designer';
-  if (/\b(market|brand|campaign|seo|social media|ads)\b/.test(lower)) return 'Marketing strategist';
-  if (/\b(plan|strategy|roadmap|proposal|pitch)\b/.test(lower)) return 'Strategic planner';
-
-  // Other
-  if (/\b(review|feedback|evaluate|assess|audit)\b/.test(lower)) return 'Domain expert';
-  if (/\b(translate|localize|language)\b/.test(lower)) return 'Professional translator';
-
-  return 'Domain expert';
-}
-
 export function extractTask(text) {
   const cleaned = text
     .replace(/\b(you are|act as|role:?|imagine you).+?[.,]/gi, '')
@@ -65,21 +26,27 @@ export function extractTask(text) {
   }
 
   const taskPatterns = [
-    // Gerund intent: "building X", "creating X" — often after cleanup strips "thinking about"
-    /\b(building|creating|developing|designing|writing|making)\s+(?:something\s+like\s+)?(.+?)(?:[.?!]|$)/im,
-    /(?:help me |help us )?(write|create|build|generate|design|develop|draft|compose|produce|prepare)\s+(.+?)(?:[.?!]|$)/im,
-    /(?:help me |help us )?(explain|describe|summarize|analyze|review|compare|evaluate|list|outline)\s+(.+?)(?:[.?!]|$)/im,
-    /(?:help me |help us )?(translate|convert|transform|rewrite|edit|fix|debug|refactor|optimize)\s+(.+?)(?:[.?!]|$)/im,
+    // 1. Decision / Strategic (Highest Priority)
+    /(?:help me |help us |can you )?(prioritize|evaluate options|strategize)\s+(.+?)(?:[.?!]|$)/im,
+    /(?:help me |help us |can you )plan\s+(.+?)(?:[.?!]|$)/im,
+    // 2. Analysis
+    /(?:help me |help us )?(analyze|review|compare|evaluate|investigate|assess)\s+(.+?)(?:[.?!]|$)/im,
+    // 3. Workflow / Transformation
+    /(?:help me |help us )?(translate|convert|transform|rewrite|edit|fix|debug|refactor|optimize|update)\s+(.+?)(?:[.?!]|$)/im,
+    // 4. Content / Creation
+    /(?:help me |help us )?(write|create|build|generate|design|develop|draft|compose|produce|prepare|outline|summarize|explain|describe)\s+(.+?)(?:[.?!]|$)/im,
+    // Basic gerund fallback
+    /\b(building|creating|developing|designing|writing|making|analyzing|prioritizing)\s+(?:something\s+like\s+)?(.+?)(?:[.?!]|$)/im,
   ];
 
-  // Find the earliest matching task verb in the text
+  // Priority extraction: Instead of earliest match index, find the first matching pattern in priority order
   let bestMatch = null;
-  let bestIndex = Infinity;
   for (const pattern of taskPatterns) {
     const match = cleaned.match(pattern);
-    if (match && match.index < bestIndex) {
+    // Extra validation for gerund fallback: ensure the captured verb isn't preceded by noise 
+    if (match) {
       bestMatch = match;
-      bestIndex = match.index;
+      break; // Since array is sorted by Decision > Analysis > Workflow > Content
     }
   }
 
@@ -306,7 +273,7 @@ export function extractConstraints(text) {
   return constraints;
 }
 
-export function extractKeyPoints(text, originalText) {
+export function extractKeyPoints(text, originalText, intent = 'content', domain = 'general') {
   const points = [];
   const lower = text.toLowerCase();
   const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
@@ -461,6 +428,9 @@ export function extractKeyPoints(text, originalText) {
     if (!points.includes(aiPoint)) points.push(aiPoint);
   }
 
+  // Explicit-only constraint for aggressive patterns (Pattern Leakage protection)
+  const isExplicitBuilding = /\b(?:build|develop|create|implement|launch)\b/i.test(lower) && intent !== 'decision' && intent !== 'analysis';
+
   // AI feature integration (generic — not prompt optimization specific)
   const origLowerFull = (originalText || text).toLowerCase();
   if (/\b(?:add|integrate|include|want|uses?)\s+(?:some\s+)?(?:ai|artificial intelligence|machine learning)\b/i.test(origLowerFull)
@@ -476,12 +446,11 @@ export function extractKeyPoints(text, originalText) {
     }
   }
 
-  // Tech stack as suggestion (uncertain mentions) — moved from constraints
-  // Only applies when the prompt is about *building* something, not *writing about* a tech topic
-  const isBuildingContext = /\b(?:build|develop|create|implement|launch|mvp|saas|product|app|application|startup)\b/i.test(lower);
-  const techSuggestions = [];
-  if (isBuildingContext) {
+  // Tech stack as suggestion (uncertain mentions)
+  // Only applies when explicitly building something, guarded against analysis/decision leakage
+  if (isExplicitBuilding) {
     const origLower = (originalText || text).toLowerCase();
+    const techSuggestions = [];
     const techNames = [
       [/\b(next\.?js|nextjs)\b/i, 'Next.js'], [/\b(react(?:\.?js)?|reactjs)\b/i, 'React'],
       [/\b(firebase)\b/i, 'Firebase'], [/\b(supabase)\b/i, 'Supabase'],
@@ -489,21 +458,20 @@ export function extractKeyPoints(text, originalText) {
     ];
     for (const [pattern, label] of techNames) {
       if (pattern.test(origLower)) {
-        // Only add as suggestion if mentioned with uncertainty — check original text (before "maybe" etc. are stripped)
         const uncertaintyPattern = new RegExp(`\\b(?:maybe|perhaps|heard|not sure|might|could)\\b[^.]*\\b${label.replace('.', '\\.')}\\b|\\b${label.replace('.', '\\.')}\\b[^.]*\\b(?:or something|not sure|might)\\b`, 'i');
         if (uncertaintyPattern.test(originalText || text)) {
           techSuggestions.push(label);
         }
       }
     }
-  }
-  if (techSuggestions.length > 0) {
-    const point = `Suggest suitable tech stack options (e.g., ${techSuggestions.join(', ')})`;
-    if (!points.includes(point)) points.push(point);
+    if (techSuggestions.length > 0) {
+      const point = `Suggest suitable tech stack options (e.g., ${techSuggestions.join(', ')})`;
+      if (!points.includes(point)) points.push(point);
+    }
   }
 
-  // Validation strategy
-  if (isBuildingContext && /\b(?:validate|validation|user\s+feedback|test\s+(?:the\s+)?(?:idea|concept|market)|metrics|measure)\b/i.test(lower)) {
+  // Validation strategy (strictly gated by building intent)
+  if (isExplicitBuilding && /\b(?:validate|validation|user\s+feedback|test\s+(?:the\s+)?(?:idea|concept|market)|metrics|measure)\b/i.test(lower)) {
     const point = 'Define validation strategy (user feedback, metrics)';
     if (!points.includes(point)) points.push(point);
   }

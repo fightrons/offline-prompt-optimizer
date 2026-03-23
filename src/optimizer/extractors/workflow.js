@@ -1,55 +1,13 @@
 import { extractRole, extractTask } from './content.js';
+import { mapRole } from './role.js';
 import { fixCasing } from '../utils.js';
 
-export function detectPromptType(text) {
-  const lower = text.toLowerCase();
-  const signals = [
-    /\bstep\s*\d+\b/i,                          // "Step 1", "Step 2"
-    /\bcolumn\s*[a-g]\b/i,                       // "Column A", "Column B"
-    /\brss\s*feed/i,                             // RSS feeds
-    /\bgoogle\s*(?:sheet|alert|doc)/i,           // Google tools
-    /\b(?:spreadsheet|excel\s*sheet)\b/i,        // Spreadsheets
-    /\b(?:scrape|fetch|crawl)\b/i,               // Data collection
-    /\bupdate\s*rows?\b/i,                       // Data entry
-    /\b(?:daily|weekly|recurring)\s*(?:basis|task|research)\b/i, // Recurring workflows
-    /https?:\/\/[^\s]+(?:rss|feed|xml)\b/i,     // RSS URLs
-    /\b\w+\.com\/(?:rss|feed)\b/i,              // Feed URLs
-    /\b(?:jira\b|github\s*issues?|sentry|crash\s*logs?|bug\s*reports?)\b/i, // QA / Engineering tracking
-    /\b(?:track(?:ing)?|analyz(?:e|ing))\s*(?:bugs?|issues?|errors?)\b/i,    // QA / Engineering analysis
-    /\b(?:features?|roadmap|prioritiz(?:e|ing|ation)|ideas?|impact\s+vs\s+effort)\b/i, // PM Decision workflows
-  ];
-  const matchCount = signals.filter(p => p.test(lower)).length;
-  // Workflow if 3+ signals, or has both steps and structured output (columns/sheets)
-  if (matchCount >= 3) return 'workflow';
-  if (/\bstep\s*\d+\b/i.test(lower) && /\bcolumn\s*[a-g]\b/i.test(lower)) return 'workflow';
-  if (/\b(?:jira|github\s*issues?|sentry)\b/i.test(lower) && /\b(?:bugs?|issues?|track(?:ing)?)\b/i.test(lower)) return 'workflow';
-  if (/\b(?:prioritize|impact|effort|feature|roadmap)\b/i.test(lower)) return 'workflow';
-  return 'content';
-}
-
-export function extractWorkflowComponents(text, originalText) {
+export function extractWorkflowComponents(text, originalText, intent, domain) {
   const lower = (originalText || text).toLowerCase();
   const orig = originalText || text;
 
   // --- Role ---
-  let role = extractRole(orig);
-  if (!role) {
-    // Financial/analytical intent takes priority — objective is analysis, not just content gathering
-    if (/\b(?:financial|finance|cost\s+optimi|revenue|pricing\s+strateg|business\s+margin|profitability|economic|investment)\b/i.test(lower)
-      && /\b(?:insight|decision|analy|actionable|strateg)\b/i.test(lower)) {
-      role = 'Financial analyst';
-    } else if (/\b(?:research|rss|scrape|content\s+pipeline|daily\s+(?:research|content))\b/i.test(lower)) {
-      role = 'Content research specialist';
-    } else if (/\b(?:automat|workflow|pipeline|etl|data\s+(?:entry|collection))\b/i.test(lower)) {
-      role = 'Workflow automation specialist';
-    } else if (/\b(?:qa|quality\s*assurance|bug|tester|reliability|systems\s+analyst)\b/i.test(lower) || /\b(?:jira|sentry|github\s*issues?)\b/i.test(lower)) {
-      role = 'QA Engineer';
-    } else if (/\b(?:product\s+manager|roadmap|prioritiz(?:e|ation)|feature\s+requests?)\b/i.test(lower)) {
-      role = 'Product Manager';
-    } else {
-      role = 'Domain expert';
-    }
-  }
+  let role = extractRole(orig) || mapRole(intent, domain);
 
   // --- Objective ---
   // Try to extract from "you need to" / "what you need to do" / opening context
@@ -297,62 +255,60 @@ export function extractWorkflowComponents(text, originalText) {
   if (/\bsynthesize\b/i.test(lower) || /\bdon'?t\s+just\s+copy\b/i.test(lower)) guidelines.push('Synthesize inputs, don\'t just copy');
   if (/\bgroup\s+similar\b/i.test(lower)) guidelines.push('Group similar items');
 
-  return { role, objective, context, topics, dataSources, steps, outputFormat, tools, guidelines };
+  return { role, objective, context, topics, dataSources, steps, outputFormat, tools, guidelines, intent };
 }
 
-export function buildWorkflowPrompt(components) {
+export function buildIntentSpecificPrompt(components) {
   const sections = [];
 
-  if (components.role) {
-    sections.push(`Role: ${components.role}`);
-  }
+  if (components.role) sections.push(`Role: ${components.role}`);
+  if (components.objective) sections.push(`Objective: ${components.objective}`);
 
-  if (components.objective) {
-    sections.push(`Objective: ${components.objective}`);
-  }
-
-  if (components.context.length > 0) {
-    sections.push(`Context:\n${components.context.join('\n')}`);
-  }
-
-  if (components.topics.length > 0) {
-    // Compact: comma-separated if all topics are short, otherwise bare lines
-    const allShort = components.topics.every(t => t.length <= 30);
-    if (allShort && components.topics.length <= 12) {
-      sections.push(`Topics: ${components.topics.join(', ')}`);
-    } else {
-      sections.push(`Topics:\n${components.topics.join('\n')}`);
-    }
-  }
-
-  if (Object.keys(components.dataSources).length > 0) {
-    let sourceText = 'Inputs:';
-    for (const [category, urls] of Object.entries(components.dataSources)) {
-      if (Object.keys(components.dataSources).length === 1 && (category === 'Sources' || category === 'Bug Reports')) {
-        sourceText += '\n' + urls.join('\n');
+  const formatInputs = (sources) => {
+    let text = 'Inputs:';
+    for (const [category, urls] of Object.entries(sources)) {
+      if (Object.keys(sources).length === 1 && (category === 'Sources' || category === 'Bug Reports')) {
+        text += '\n' + urls.map(u => `- ${u}`).join('\n');
       } else {
-        sourceText += `\n${category}:`;
-        sourceText += '\n' + urls.join('\n');
+        text += `\n${category}:\n` + urls.map(u => `- ${u}`).join('\n');
       }
     }
-    sections.push(sourceText);
+    return text;
+  };
+
+  if (components.intent === 'decision') {
+    if (Object.keys(components.dataSources).length > 0) sections.push(formatInputs(components.dataSources));
+    if (components.topics.length > 0) sections.push(`Decision Factors:\n${components.topics.map(t => `- ${t}`).join('\n')}`);
+    
+    // Evaluation criteria heuristic
+    const criteria = [];
+    if (/\bimpact\s+vs\s+effort\b/i.test(components.objective) || /\bimpact\b/i.test(components.objective)) criteria.push('Impact vs Effort');
+    if (/\buser\s+growth|revenue|retention\b/i.test(components.objective)) criteria.push('Alignment with key business metrics');
+    if (criteria.length > 0) sections.push(`Evaluation Criteria:\n${criteria.map(c => `- ${c}`).join('\n')}`);
+
+    if (components.outputFormat.length > 0) sections.push(`Output Format:\n${components.outputFormat.map(f => `- ${f}`).join('\n')}`);
+    if (components.guidelines.length > 0) sections.push(`Guidelines:\n${components.guidelines.map(g => `- ${g}`).join('\n')}`);
+    return fixCasing(sections.join('\n\n'));
   }
 
-  if (components.steps.length > 0) {
-    sections.push(`Key Tasks:\n${components.steps.join('\n')}`);
+  if (components.intent === 'analysis') {
+    if (Object.keys(components.dataSources).length > 0) sections.push(formatInputs(components.dataSources));
+    if (components.topics.length > 0) sections.push(`Analysis Focus:\n${components.topics.map(t => `- ${t}`).join('\n')}`);
+    if (components.steps.length > 0) sections.push(`Analysis Tasks:\n${components.steps.map(s => `- ${s}`).join('\n')}`);
+    if (components.outputFormat.length > 0) sections.push(`Output Format:\n${components.outputFormat.map(f => `- ${f}`).join('\n')}`);
+    if (components.tools.length > 0) sections.push(`Tools: ${components.tools.join(', ')}`);
+    if (components.guidelines.length > 0) sections.push(`Guidelines:\n${components.guidelines.map(g => `- ${g}`).join('\n')}`);
+    return fixCasing(sections.join('\n\n'));
   }
 
-  if (components.outputFormat.length > 0) {
-    sections.push(`Output Format:\n${components.outputFormat.join('\n')}`);
-  }
-
-  if (components.tools.length > 0) {
-    sections.push(`Tools: ${components.tools.join(', ')}`);
-  }
-
-  if (components.guidelines.length > 0) {
-    sections.push(`Guidelines:\n${components.guidelines.join('\n')}`);
-  }
+  // Default Workflow
+  if (components.context.length > 0) sections.push(`Context:\n${components.context.map(c => `- ${c}`).join('\n')}`);
+  if (components.topics.length > 0) sections.push(`Topics:\n${components.topics.map(t => `- ${t}`).join('\n')}`);
+  if (Object.keys(components.dataSources).length > 0) sections.push(formatInputs(components.dataSources));
+  if (components.steps.length > 0) sections.push(`Key Tasks:\n${components.steps.map(s => `- ${s}`).join('\n')}`);
+  if (components.outputFormat.length > 0) sections.push(`Output Format:\n${components.outputFormat.map(f => `- ${f}`).join('\n')}`);
+  if (components.tools.length > 0) sections.push(`Tools: ${components.tools.join(', ')}`);
+  if (components.guidelines.length > 0) sections.push(`Guidelines:\n${components.guidelines.map(g => `- ${g}`).join('\n')}`);
 
   return fixCasing(sections.join('\n\n'));
 }

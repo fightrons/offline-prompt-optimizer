@@ -1,7 +1,10 @@
 import { estimateTokens, estimateCost, countAnthropicTokens, getEncoder } from './tokens.js';
 import { hardCleanup } from './utils.js';
-import { detectPromptType, extractWorkflowComponents, buildWorkflowPrompt } from './extractors/workflow.js';
-import { extractRole, inferRole, extractTask, extractConstraints, extractKeyPoints, extractOutputRequirements, deduplicateAgainstTask, deduplicateRequirements, buildStructuredPrompt } from './extractors/content.js';
+import { extractWorkflowComponents, buildIntentSpecificPrompt } from './extractors/workflow.js';
+import { extractRole, extractTask, extractConstraints, extractKeyPoints, extractOutputRequirements, deduplicateAgainstTask, deduplicateRequirements, buildStructuredPrompt } from './extractors/content.js';
+import { detectIntent } from './extractors/intent.js';
+import { detectDomain } from './extractors/domain.js';
+import { mapRole } from './extractors/role.js';
 
 // Pre-load encoder on import so it's ready by the time user clicks optimize
 getEncoder();
@@ -16,37 +19,40 @@ export function optimizeLocal(input) {
 
   const changes = [];
 
-  // Detect prompt type: workflow vs content
-  const promptType = detectPromptType(input);
-
   // Layer 1: Hard cleanup
   const cleaned = hardCleanup(input);
   if (cleaned !== input.trim()) {
     changes.push('Reduced verbosity and removed soft language');
   }
 
+  // Layer 2.0 & 3.0: Classification
+  const intent = detectIntent(cleaned);
+  const domain = detectDomain(cleaned);
+  changes.push(`Detected Intent: ${intent.toUpperCase()}`);
+  changes.push(`Detected Domain: ${domain.toUpperCase()}`);
+
   let optimized;
 
-  if (promptType === 'workflow') {
-    // ─── Workflow path: extract structured workflow components ───
-    const components = extractWorkflowComponents(cleaned, input);
-    optimized = buildWorkflowPrompt(components);
-    changes.push('Detected workflow prompt — used structured workflow format');
+  if (intent === 'workflow' || intent === 'analysis' || intent === 'decision') {
+    // ─── Intent-Aware Path: extract structured components based on intent ───
+    const components = extractWorkflowComponents(cleaned, input, intent, domain);
+    optimized = buildIntentSpecificPrompt(components);
+    changes.push(`Detected ${intent} prompt — used structured ${intent} format`);
     if (components.role) changes.push(`Inferred role: "${components.role}"`);
-    if (components.topics.length > 0) changes.push(`Extracted ${components.topics.length} topic(s)`);
-    if (Object.keys(components.dataSources).length > 0) changes.push(`Extracted ${Object.keys(components.dataSources).length} data source category(ies)`);
-    if (components.steps.length > 0) changes.push(`Extracted ${components.steps.length} step(s)`);
-    if (components.outputFormat.length > 0) changes.push(`Extracted ${components.outputFormat.length} output column(s)`);
-    if (components.tools.length > 0) changes.push(`Identified ${components.tools.length} tool(s)`);
+    if (components.topics.length > 0) changes.push(`Extracted ${components.topics.length} topic/factor(s)`);
+    if (Object.keys(components.dataSources).length > 0) changes.push(`Extracted ${Object.keys(components.dataSources).length} data source(s)`);
+    if (components.steps.length > 0) changes.push(`Extracted ${components.steps.length} task(s)`);
+    if (components.outputFormat.length > 0) changes.push(`Extracted ${components.outputFormat.length} output format(s)`);
   } else {
-    // ─── Content path: original extraction pipeline ───
 
-    // Layer 2: Extract structure
+    // ─── Content Path: original extraction pipeline ───
+
+    // Layer 4: Extract structure (Content Intent)
     const explicitRole = extractRole(input);
     const task = extractTask(cleaned);
-    const role = explicitRole || inferRole(task);
+    const role = explicitRole || mapRole(intent, domain);
     const constraints = extractConstraints(input);
-    let keyPoints = extractKeyPoints(cleaned, input);
+    let keyPoints = extractKeyPoints(cleaned, input, intent, domain);
     let outputRequirements = extractOutputRequirements(cleaned);
 
     // Split: "Include/Add X" in key points → move to requirements (but not "Provide optional..." feature descriptions)
@@ -98,8 +104,8 @@ export function optimizeLocal(input) {
   let afterTokens = estimateTokens(optimized);
 
   // Guard: if structured output is longer than input, fall back to cleaned text
-  // Skip for workflow prompts — their value is in restructuring, not compression
-  if (promptType !== 'workflow' && afterTokens > beforeTokens) {
+  // Skip for workflow/analysis/decision prompts — their value is in restructuring, not compression
+  if (intent !== 'workflow' && intent !== 'analysis' && intent !== 'decision' && afterTokens > beforeTokens) {
     optimized = cleaned;
     afterTokens = estimateTokens(optimized);
     // If even cleaned is longer (very short input), return original
