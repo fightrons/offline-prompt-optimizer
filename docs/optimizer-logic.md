@@ -23,7 +23,10 @@ User Input (messy, conversational)
 └────────┬────────────┘
          │
          ▼
-  Structured Output (Role / Task / Constraints / Key Points / Output)
+  Structured Output
+        │
+        ├── Content path → Role / Task / Constraints / Key Points / Output
+        └── Workflow path → Role / Objective / Context / Topics / Data Sources / Steps / Output Format / Tools / Guidelines
 ```
 
 ## Layer 1: Hard Cleanup
@@ -115,6 +118,17 @@ Runs against both the original input and the cleaned text, depending on what's b
 | summarize, summary, overview | Research analyst |
 | *(fallback)* | Domain expert |
 
+**Workflow-specific role inference** — when a prompt is detected as a workflow (see Workflow Detection below), role inference uses a separate priority chain:
+
+| Workflow Keywords | Inferred Role |
+|---|---|
+| financial/cost/revenue/pricing + insight/decision/actionable | Financial analyst |
+| research, RSS, scrape, content pipeline, daily research | Content research specialist |
+| automate, workflow, pipeline, ETL, data entry | Workflow automation specialist |
+| *(fallback)* | Domain expert |
+
+**Role-intent alignment**: The financial analyst detection is critical — prompts about financial insights and decision-making should get an analytical role, not a content-gathering role, even when RSS feeds and research patterns are present. The intent (analysis vs. gathering) determines the role.
+
 ### 2b. Task Extraction
 
 Three regex pattern groups scan for action verbs, each covering a different verb family:
@@ -184,6 +198,47 @@ Detects formatting and structural requirements:
 - **Content inclusions**: "include statistics/examples/references/diagrams" etc.
 - **Specific list requests**: "list of tips for [X]", "steps to [Y]"
 - **Structure detection**: "headings", "sections", "easy to read", "structured article" → "Structured article with headings and sections"
+
+## Workflow Detection
+
+Before Layer 3, the engine determines whether the prompt is a **workflow** or **content** prompt. This gates which build path is used.
+
+### Detection Signals
+
+The engine checks for 10 signal patterns:
+
+| Signal | Pattern |
+|---|---|
+| Numbered steps | "Step 1", "Step 2" |
+| Column definitions | "Column A", "Column B" |
+| RSS feeds | "RSS feed" |
+| Google tools | "Google Sheet", "Google Alert", "Google Doc" |
+| Spreadsheets | "spreadsheet", "excel sheet" |
+| Data collection | "scrape", "fetch", "crawl" |
+| Data entry | "update rows" |
+| Recurring tasks | "daily basis", "weekly task", "recurring research" |
+| RSS URLs | URLs containing rss/feed/xml |
+| Feed URLs | domain.com/rss or domain.com/feed patterns |
+
+**Trigger**: 3+ signals match, OR the prompt has both numbered steps AND column definitions.
+
+### Workflow Extraction Pipeline
+
+When detected as a workflow, Layer 2 uses an alternate extraction pipeline:
+
+1. **Role** — explicit role first, then intent-aware inference (financial analyst > content research specialist > workflow automation specialist)
+2. **Objective** — from "you need to", "the goal is to", "need help setting up", or task extraction fallback
+3. **Context** — target audience ("for a consultant"), expertise areas, platforms (LinkedIn, Instagram, etc.), content style
+4. **Topics** — from vertical lists ("find topics on:\n- X\n- Y") or inline mentions ("things like X, Y, Z")
+5. **Data Sources** — line-by-line URL parsing with category headers; Google Alerts detected separately
+6. **Steps** — from "Step N:" patterns or numbered lists
+7. **Output Format** — "Column A-G:" definitions with parenthetical cleanup
+8. **Tools** — Google Sheets, Monaco Editor, Excel, Notion, Airtable detection
+9. **Guidelines** — inferred from context: informative → prioritize insights, actionable → ensure relevance, decision-making → business focus, generic avoidance, practical takeaways, social media → content creation focus, scrape → clean content
+
+### Workflow Length Guard
+
+Unlike content prompts, workflow prompts may slightly **expand** (adding structure headers). The guard allows up to 15% expansion since the value is in restructuring, not compression.
 
 ## Layer 3: Build Structured Prompt
 

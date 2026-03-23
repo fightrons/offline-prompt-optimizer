@@ -567,6 +567,142 @@ describe('Test 8: Workflow Prompt — Content Research Pipeline', () => {
   });
 });
 
+// ─── Test 9: Financial Insights Workflow (Role-Intent Alignment) ───
+
+const FINANCE_WORKFLOW_INPUT = `Hey, so I need help setting up something for tracking financial and operational insights for a small business, but I'm not entirely sure how to structure it properly. This is for someone who manages business operations and wants to stay updated on things like cost optimization, revenue trends, pricing strategies, and general financial insights.
+
+The goal is to regularly gather useful information that can help in decision-making — not just generic finance news, but things like case studies, cost-cutting strategies, pricing experiments, business performance benchmarks, and maybe even economic updates that could impact small businesses.
+
+I've collected a bunch of sources like finance blogs, business news sites, and some RSS feeds, and I want you to go through them daily and extract useful insights.
+
+Here are some sources:
+
+Finance & Business:
+https://www.ft.com/?format=rss
+https://www.bloomberg.com/feed/podcast/etf-report.xml
+https://www.cnbc.com/id/10001147/device/rss/rss.html
+https://hbr.org/rss
+
+Small Business & Strategy:
+https://www.sba.gov/blog/rss.xml
+https://bothsidesofthetable.com/feed
+https://avc.com/feed/
+
+Economic Updates:
+https://www.imf.org/en/News/rss
+https://www.worldbank.org/en/news/rss
+
+Also, I've set up Google Alerts for keywords like "pricing strategy", "cost optimization", "business margins", "startup profitability", so you can include insights from those emails as well.
+
+What I want you to do is:
+
+First go to this Google Sheet:
+https://docs.google.com/spreadsheets/d/example-finance-sheet/edit#gid=0
+
+Then update it with the following:
+
+Column A: Date
+Column B: Category (Cost / Revenue / Pricing / Strategy / Economy)
+Column C: Summary (explain how this insight can help business decision-making)
+Column D: URL (original article link)
+Column E: Status (set as Pending)
+Column F: Source (RSS / Blog / Google Alert)
+Column G: Full cleaned content from the article
+
+Make sure the insights are actionable and relevant to small business owners.
+
+Avoid generic news that doesn't provide real value.
+
+Also try to highlight practical takeaways wherever possible.
+
+And yeah, just make sure everything is structured cleanly and consistently before adding it.`;
+
+describe('Test 9: Financial Insights Workflow — Role-Intent Alignment', () => {
+  const result = optimizeLocal(FINANCE_WORKFLOW_INPUT);
+
+  it('should detect as workflow prompt (not content format)', () => {
+    expect(result.optimizedPrompt).toMatch(/^Role:/m);
+    expect(result.optimizedPrompt).toMatch(/\bObjective:/m);
+    expect(result.optimizedPrompt).not.toMatch(/^Key points:/m);
+    expect(result.optimizedPrompt).not.toMatch(/^Constraints:/m);
+  });
+
+  it('should infer role as Financial analyst, NOT Content research specialist', () => {
+    expect(result.optimizedPrompt).toContain('Role: Financial analyst');
+    expect(result.optimizedPrompt).not.toMatch(/Content research specialist/i);
+  });
+
+  it('should extract actionable/analytical objective', () => {
+    expect(result.optimizedPrompt).toMatch(/Objective:/m);
+    // Objective should convey analysis/insights, not just "gather content"
+    expect(result.optimizedPrompt).toMatch(/\b(?:financial|operational|insight|decision)\b/i);
+  });
+
+  it('should extract data source categories', () => {
+    expect(result.optimizedPrompt).toMatch(/Data Sources:/m);
+    expect(result.optimizedPrompt).toMatch(/Finance & Business/i);
+    expect(result.optimizedPrompt).toMatch(/Small Business/i);
+    expect(result.optimizedPrompt).toMatch(/Economic/i);
+  });
+
+  it('should include key RSS feed URLs', () => {
+    expect(result.optimizedPrompt).toMatch(/ft\.com/i);
+    expect(result.optimizedPrompt).toMatch(/hbr\.org/i);
+    expect(result.optimizedPrompt).toMatch(/bloomberg/i);
+    expect(result.optimizedPrompt).toMatch(/imf\.org/i);
+  });
+
+  it('should detect Google Alerts as a data source', () => {
+    expect(result.optimizedPrompt).toMatch(/Google Alerts/i);
+  });
+
+  it('should extract output format columns', () => {
+    expect(result.optimizedPrompt).toMatch(/Output Format:/m);
+    expect(result.optimizedPrompt).toMatch(/Column A/);
+    expect(result.optimizedPrompt).toMatch(/Column G/);
+  });
+
+  it('should extract topics/categories from inline mentions', () => {
+    expect(result.optimizedPrompt).toMatch(/Topics:/m);
+    // Should capture cost optimization, revenue trends, etc.
+    expect(result.optimizedPrompt).toMatch(/cost optimization/i);
+    expect(result.optimizedPrompt).toMatch(/pricing strateg/i);
+  });
+
+  it('should identify Google Sheets as a tool', () => {
+    expect(result.optimizedPrompt).toMatch(/Tools:/m);
+    expect(result.optimizedPrompt).toMatch(/Google Sheets/i);
+  });
+
+  it('should have guidelines about actionable insights and decision-making', () => {
+    expect(result.optimizedPrompt).toMatch(/Guidelines:/m);
+    expect(result.optimizedPrompt).toMatch(/actionable/i);
+    expect(result.optimizedPrompt).toMatch(/decision-making/i);
+  });
+
+  it('should have guideline to filter generic news', () => {
+    expect(result.optimizedPrompt).toMatch(/generic/i);
+  });
+
+  it('should have guideline about practical takeaways', () => {
+    expect(result.optimizedPrompt).toMatch(/practical takeaway/i);
+  });
+
+  it('should NOT have pattern leakage from content path', () => {
+    expect(result.optimizedPrompt).not.toMatch(/Define MVP scope/i);
+    expect(result.optimizedPrompt).not.toMatch(/Include relevant statistics/i);
+    expect(result.optimizedPrompt).not.toMatch(/Tone:/i);
+  });
+
+  it('should report workflow detection in changes', () => {
+    expect(result.changes.some(c => /workflow/i.test(c))).toBe(true);
+  });
+
+  it('should restructure effectively (no excessive expansion)', () => {
+    expect(result.reduction).toBeGreaterThan(-15);
+  });
+});
+
 // ─── Token Estimation ───
 
 describe('Token Estimation', () => {

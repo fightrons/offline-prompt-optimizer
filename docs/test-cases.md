@@ -526,6 +526,128 @@ Guidelines:
 
 ---
 
+## Test 9: Financial Insights Workflow — Role-Intent Alignment
+
+**Input** (~377 tokens):
+
+```
+Hey, so I need help setting up something for tracking financial and operational insights for a small business, but I'm not entirely sure how to structure it properly. This is for someone who manages business operations and wants to stay updated on things like cost optimization, revenue trends, pricing strategies, and general financial insights.
+
+The goal is to regularly gather useful information that can help in decision-making — not just generic finance news, but things like case studies, cost-cutting strategies, pricing experiments, business performance benchmarks, and maybe even economic updates that could impact small businesses.
+
+I've collected a bunch of sources like finance blogs, business news sites, and some RSS feeds, and I want you to go through them daily and extract useful insights.
+
+Here are some sources:
+
+Finance & Business:
+https://www.ft.com/?format=rss
+https://www.bloomberg.com/feed/podcast/etf-report.xml
+https://www.cnbc.com/id/10001147/device/rss/rss.html
+https://hbr.org/rss
+
+Small Business & Strategy:
+https://www.sba.gov/blog/rss.xml
+https://bothsidesofthetable.com/feed
+https://avc.com/feed/
+
+Economic Updates:
+https://www.imf.org/en/News/rss
+https://www.worldbank.org/en/news/rss
+
+Also, I've set up Google Alerts for keywords like "pricing strategy", "cost optimization", "business margins", "startup profitability", so you can include insights from those emails as well.
+
+What I want you to do is:
+
+First go to this Google Sheet:
+https://docs.google.com/spreadsheets/d/example-finance-sheet/edit#gid=0
+
+Then update it with the following:
+
+Column A: Date
+Column B: Category (Cost / Revenue / Pricing / Strategy / Economy)
+Column C: Summary (explain how this insight can help business decision-making)
+Column D: URL (original article link)
+Column E: Status (set as Pending)
+Column F: Source (RSS / Blog / Google Alert)
+Column G: Full cleaned content from the article
+
+Make sure the insights are actionable and relevant to small business owners.
+
+Avoid generic news that doesn't provide real value.
+
+Also try to highlight practical takeaways wherever possible.
+
+And yeah, just make sure everything is structured cleanly and consistently before adding it.
+```
+
+**Expected output** (~232 tokens):
+
+```
+Role: Financial analyst
+
+Objective: Regularly gather useful information that can help in decision-making — not just generic finance news, but things like case studies, cost-cutting strategies, pricing experiments, business performance benchmarks, and maybe even economic updates that could impact small businesses
+
+Context:
+- For: tracking financial and operational insights for a small business
+
+Topics:
+- cost optimization
+- revenue trends
+- pricing strategies
+- general financial insights
+
+Data Sources:
+Finance & Business:
+- https://www.ft.com/?format=rss
+- https://www.bloomberg.com/feed/podcast/etf-report.xml
+- https://www.cnbc.com/id/10001147/device/rss/rss.html
+- https://hbr.org/rss
+Small Business & Strategy:
+- https://www.sba.gov/blog/rss.xml
+- https://bothsidesofthetable.com/feed
+- https://avc.com/feed/
+Economic Updates:
+- https://www.imf.org/en/News/rss
+- https://www.worldbank.org/en/news/rss
+Google Alerts:
+- Email-based signals
+
+Output Format:
+- Column A: Date
+- Column B: Category (Cost / Revenue / Pricing / Strategy / Economy)
+- Column C: Summary (explain how this insight can help business decision-making)
+- Column D: URL (original article link)
+- Column E: Status (set as Pending)
+- Column F: Source (RSS / Blog / Google Alert)
+- Column G: Full cleaned content from the article
+
+Tools:
+- Google Sheets
+
+Guidelines:
+- Avoid duplicate topics
+- Ensure summaries are actionable and relevant
+- Focus on relevance to business decision-making
+- Filter out generic news with no practical value
+- Highlight practical takeaways
+```
+
+**Reduction**: ~28%
+
+**What this tests**:
+- **Role-intent alignment**: The critical differentiator — role is "Financial analyst" (not "Content research specialist") because the objective is about financial insights, decision-making, and cost optimization, not just content gathering
+- **Workflow detection**: Triggers workflow path from signals: Column A-G, RSS feeds, Google Sheets, daily basis, feed URLs
+- **Analytical objective extraction**: "The goal is to regularly gather useful information that can help in decision-making" — captures the analytical intent
+- **Inline topic extraction**: Topics mentioned inline ("things like cost optimization, revenue trends, pricing strategies") rather than in a vertical list — new extraction pattern
+- **Financial keyword detection**: "financial", "cost optimization", "revenue", "pricing strategy" + "insight", "decision", "actionable" → financial analyst role
+- **Data source categorization**: 3 source categories (Finance & Business, Small Business & Strategy, Economic Updates) + Google Alerts
+- **Guidelines from explicit instructions**: "actionable and relevant", "avoid generic news", "highlight practical takeaways" → mapped to structured guidelines
+- **Decision-making focus guideline**: Inferred from "help in decision-making" and "business decision-making"
+- **No content-path pattern leakage**: No "Define MVP scope", "Include relevant statistics", or "Tone:" injected
+- **Context extraction**: "for a small business" captured from "for tracking financial and operational insights for a small business"
+
+---
+
 ## Running Tests
 
 Tests can be run manually via Node:

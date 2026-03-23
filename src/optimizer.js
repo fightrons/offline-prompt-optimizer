@@ -880,7 +880,11 @@ function extractWorkflowComponents(text, originalText) {
   // --- Role ---
   let role = extractRole(orig);
   if (!role) {
-    if (/\b(?:research|rss|scrape|content\s+pipeline|daily\s+(?:research|content))\b/i.test(lower)) {
+    // Financial/analytical intent takes priority — objective is analysis, not just content gathering
+    if (/\b(?:financial|finance|cost\s+optimi|revenue|pricing\s+strateg|business\s+margin|profitability|economic|investment)\b/i.test(lower)
+      && /\b(?:insight|decision|analy|actionable|strateg)\b/i.test(lower)) {
+      role = 'Financial analyst';
+    } else if (/\b(?:research|rss|scrape|content\s+pipeline|daily\s+(?:research|content))\b/i.test(lower)) {
       role = 'Content research specialist';
     } else if (/\b(?:automat|workflow|pipeline|etl|data\s+(?:entry|collection))\b/i.test(lower)) {
       role = 'Workflow automation specialist';
@@ -895,6 +899,8 @@ function extractWorkflowComponents(text, originalText) {
   const objPatterns = [
     /(?:you\s+(?:need|have)\s+to|your\s+(?:task|job|goal)\s+is\s+to)\s+(.+?)(?:\.\s|\n|$)/im,
     /(?:objective|goal|purpose)\s*[:—]\s*(.+?)(?:\.\s|\n|$)/im,
+    /\b(?:the\s+goal\s+is\s+to)\s+(.+?)(?:\.\s|\n|$)/im,
+    /\bneed\s+help\s+(?:setting\s+up|with)\s+(.+?)(?:\.\s|\n|$)/im,
   ];
   for (const p of objPatterns) {
     const m = orig.match(p);
@@ -911,7 +917,7 @@ function extractWorkflowComponents(text, originalText) {
   // --- Context ---
   const context = [];
   // Extract "who is this for" context
-  const forMatch = orig.match(/\b(?:for|who)\s+(?:a\s+)?([\w\s]+(?:consultant|specialist|manager|engineer|expert|person|client|team|company))\b/i);
+  const forMatch = orig.match(/\b(?:for|who)\s+(?:a\s+)?([\w\s]+(?:consultant|specialist|manager|engineer|expert|person|client|team|company|owner|business))\b/i);
   if (forMatch) {
     context.push(`For: ${forMatch[1].trim()}`);
   }
@@ -957,6 +963,26 @@ function extractWorkflowComponents(text, originalText) {
         .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
         .filter(l => l.length > 2 && l.length < 80 && !/^https?:\/\//i.test(l));
       topics.push(...tLines);
+    }
+  }
+
+  // Fallback: extract inline topic mentions like "things like X, Y, Z" or "like X, Y, and Z"
+  if (topics.length === 0) {
+    const inlineTopicPatterns = [
+      /\b(?:things\s+like|such\s+as|including|like)\s+(.+?)(?:\.\s|\n\n|$)/im,
+      /\b(?:keywords?\s+like|alerts?\s+for\s+keywords?\s+like)\s+(.+?)(?:\.\s|\n\n|$)/im,
+    ];
+    for (const itp of inlineTopicPatterns) {
+      if (topics.length > 0) break;
+      const inlineMatch = orig.match(itp);
+      if (inlineMatch) {
+        // Split comma/and-separated items, clean quotes
+        const items = inlineMatch[1]
+          .split(/,\s*(?:and\s+)?|\s+and\s+/)
+          .map(i => i.replace(/^["'"]+|["'"]+$/g, '').trim())
+          .filter(i => i.length > 2 && i.length < 60);
+        if (items.length >= 2) topics.push(...items);
+      }
     }
   }
 
@@ -1050,6 +1076,9 @@ function extractWorkflowComponents(text, originalText) {
   if (/\bavoid\s+duplicate/i.test(lower) || topics.length > 0) guidelines.push('Avoid duplicate topics');
   if (/\bscrape\b/i.test(lower) || /\bclean\b/i.test(lower)) guidelines.push('Clean scraped content (remove ads, noise, formatting issues)');
   if (/\b(?:actionable|useful|relevant)\b/i.test(lower)) guidelines.push('Ensure summaries are actionable and relevant');
+  if (/\bdecision[- ]?making\b/i.test(lower) || /\b(?:financial|business)\s+(?:insight|decision)\b/i.test(lower)) guidelines.push('Focus on relevance to business decision-making');
+  if (/\bavoid\s+(?:generic|general)\b/i.test(lower)) guidelines.push('Filter out generic news with no practical value');
+  if (/\bpractical\s+takeaway/i.test(lower) || /\bhighlight\s+(?:practical|key)\b/i.test(lower)) guidelines.push('Highlight practical takeaways');
   if (/\bcontent\s+creat/i.test(lower) || /\bsocial\s+media\b/i.test(lower)) guidelines.push('Focus on insights useful for content creation');
 
   return { role, objective, context, topics, dataSources, steps, outputFormat, tools, guidelines };
