@@ -162,7 +162,15 @@ Runs against the **original input** to catch signals before cleanup strips them.
 
 **Language and audience** are also extracted via pattern matching if present.
 
-### 2d. Key Point Extraction
+### 2d. Intent-Aware Extraction (Preventing Pattern Leakage)
+
+A critical part of Layer 2 is avoiding "context-blind keyword triggering." The system evaluates the underlying intent of the prompt (e.g., *building* a product vs. *evaluating* a product roadmap) to prevent inappropriate constraints from leaking in.
+
+- **Builder intent vs Decision intent**: If words like "product", "MVP", or "features" appear, the system previously assumed a developer mindset. It now requires explicit building/creating intent to inject constraints like "Define validation strategy" or tech stacks. If the prompt is about prioritization (e.g., "prioritize features," "impact vs effort"), it suppresses builder constraints.
+- **Analytical data vs Formatting data**: Keywords like "data" or "metrics" only trigger "Include relevant statistics" if the prompt explicitly asks to *show* or *present* stats, avoiding injections on purely analytical tasks.
+- **Relational vs Comparative**: The word "vs" only triggers a "pros and cons" comparison if the prompt is asking to compare approaches, not if it's describing relational formulas (like "impact vs effort").
+
+### 2e. Key Point Extraction
 
 Two-phase approach:
 
@@ -226,15 +234,15 @@ The engine checks for 10 signal patterns:
 
 When detected as a workflow, Layer 2 uses an alternate extraction pipeline:
 
-1. **Role** — explicit role first, then intent-aware inference (financial analyst > content research specialist > workflow automation specialist)
-2. **Objective** — from "you need to", "the goal is to", "need help setting up", or task extraction fallback
+1. **Role** — explicit role first, then intent-aware inference (financial analyst > product manager > content research specialist > workflow automation specialist)
+2. **Objective** — from "you need to", "the goal is to", "need help setting up", or task extraction fallback. For Decision workflows, this captures analytical goals like "Understand what to build next and why".
 3. **Context** — target audience ("for a consultant"), expertise areas, platforms (LinkedIn, Instagram, etc.), content style
 4. **Topics** — from vertical lists ("find topics on:\n- X\n- Y") or inline mentions ("things like X, Y, Z")
 5. **Data Sources** — line-by-line URL parsing with category headers; Google Alerts detected separately
-6. **Steps** — from "Step N:" patterns or numbered lists
+6. **Steps** — from "Step N:" patterns, numbered lists, or analytical gerund fallback (e.g. "Identify high-impact features", "Group similar requests")
 7. **Output Format** — "Column A-G:" definitions with parenthetical cleanup
 8. **Tools** — Google Sheets, Monaco Editor, Excel, Notion, Airtable detection
-9. **Guidelines** — inferred from context: informative → prioritize insights, actionable → ensure relevance, decision-making → business focus, generic avoidance, practical takeaways, social media → content creation focus, scrape → clean content
+9. **Guidelines** — inferred from context: informative → prioritize insights, actionable → ensure relevance, decision-making → business focus / justify prioritization, generic avoidance, practical takeaways, social media → content creation focus, scrape → clean content
 
 ### Workflow Length Guard
 

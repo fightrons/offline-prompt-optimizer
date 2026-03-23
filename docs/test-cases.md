@@ -648,6 +648,107 @@ Guidelines:
 
 ---
 
+## Test 10: Product Manager Roadmap Workflow (Decision vs Build)
+
+**Input** (~230 tokens):
+
+```
+Hey, I need help figuring out how to organize and track product ideas and roadmap planning for a SaaS application, but I’m not really sure how to structure it properly. This is for a product manager who wants to prioritize features, track user feedback, and align development with business goals.
+
+The goal is not just to list features, but to understand what should be built next and why — like identifying high-impact features, grouping similar requests, and aligning them with metrics like user growth, retention, or revenue.
+
+We have multiple sources of input like:
+- User feedback (support tickets, surveys, emails)
+- Feature requests (from internal teams and customers)
+- Product analytics (usage data, drop-offs, engagement metrics)
+- Competitor analysis and market trends
+
+I want you to go through these inputs regularly and extract meaningful insights, not just raw data.
+
+What I want you to do is:
+
+First go to this Google Sheet:
+https://docs.google.com/spreadsheets/d/example-product-sheet/edit#gid=0
+
+Then update it with the following:
+
+Column A: Date
+Column B: Feature / Idea
+Column C: Problem it solves
+Column D: Impact (Low / Medium / High)
+Column E: Effort (Low / Medium / High)
+Column F: Priority Score (based on impact vs effort)
+Column G: Source (User Feedback / Analytics / Market / Internal)
+Column H: Notes / Context
+
+Make sure you don’t just copy inputs — try to synthesize them.
+Group similar ideas where possible.
+Focus on things that actually move business metrics, not just “nice-to-have” features.
+Also try to highlight why something should be prioritized, not just what it is.
+Avoid duplication and keep everything structured cleanly.
+```
+
+**Expected output** (~200 tokens):
+
+```
+Role: Product Manager
+
+Objective: Understand what should be built next and why — like identifying high-impact features, grouping similar requests, and aligning them with metrics like user growth, retention, or revenue
+
+Context:
+- For: product manager
+
+Topics:
+- identifying high-impact features
+- grouping similar requests
+- aligning them with metrics like user growth
+- retention
+- or revenue
+
+Inputs:
+First go to this Google Sheet:
+- https://docs.google.com/spreadsheets/d/example-product-sheet/edit#gid=0
+Bug Reports:
+- User feedback
+Product Inputs:
+- User feedback (tickets, surveys, emails)
+- Feature requests
+- Product analytics
+- Market and competitor insights
+
+Key Tasks:
+- Determine how to organize and
+- Identify high-impact features,
+- Group similar requests,
+- Align them with metrics like user growth,
+
+Output Format:
+- Column A: Date
+- Column B: Feature / Idea
+- Column C: Problem it solves
+- Column D: Impact — Low / Medium / High
+- Column E: Effort — Low / Medium / High
+- Column F: Priority Score — based on impact vs effort
+- Column G: Source — User Feedback / Analytics / Market / Internal
+
+Tools:
+- Google Sheets
+
+Guidelines:
+- Avoid duplicate topics
+- Focus on features that impact key business metrics
+- Clearly justify prioritization decisions
+```
+
+**What this tests**:
+- **Intent-Awareness (Decision vs Build)**: Does not inject software-building concepts like "Define validation strategy" or "Suggest tech stask" even though words like `product`, `SaaS`, and `feature` are present.
+- **Pattern Filtering**: Does not leak "pros/cons" comparison from "impact vs effort". Does not leak "relevant statistics" from "analytics".
+- **Role Accuracy**: Correctly maps to "Product Manager".
+- **Objective Extraction**: Correctly parses analytical goals from "The goal is not just to X, but to Y".
+- **Output Column Parentheses Parsing**: Successfully parses columns formatted as `Column: Name (Detail)`.
+
+---
+
 ## Running Tests
 
 Tests can be run manually via Node:
