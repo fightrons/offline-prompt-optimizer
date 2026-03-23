@@ -296,6 +296,236 @@ Output requirements:
 
 ---
 
+## Test 8: Workflow Prompt — Content Research Pipeline (Multi-Step, Data-Heavy)
+
+**Input** (350 tokens):
+
+```
+Act as an content research person.
+
+You need to do content research for a digital marketing consultant
+
+who has deep knowledge on ecommerce sales, lead generation and seo.
+
+Secoundary he also has knowledge on social media, branding.
+
+So for his social media plaform (linkedin, instagram and youtube)
+
+how will this be optimized
+
+He want's his social media content more towards informative, knowledge sharing and updates happening around his subject.
+
+You have to find recent topics on:
+
+Marketing
+
+Marketing Case studies
+
+Branding
+
+Business News
+
+Brand news
+
+AI updates
+
+Digital marketing
+
+Founder stories
+
+Business stories
+
+Here are some rss feed and websites for you to research on daily basis
+
+RSS Feeds
+
+https://www.livemint.com/rss/companies
+
+https://www.livemint.com/rss/industry
+
+https://www.livemint.com/rss/education
+
+https://www.livemint.com/rss/technology
+
+https://www.livemint.com/rss/AI
+
+https://hbr.org/rss
+
+https://blog.hubspot.com/marketing/rss.xml
+
+https://www.marketingweek.com/feed/
+
+https://fieo.org/rss
+
+Startup Feeds
+
+yourstory.com/feed
+
+news.crunchbase.com/feed
+
+inc42.com/feed
+
+Business News
+
+economictimes.indiatimes.com/rssfeeds/default.rss
+
+moxie.foxbusiness.com/google-developer-channel.xml
+
+prod-qt-images.s3.amazonaws.com/rssfeeds/ndtvprofit.xml
+
+Branding & Marketing
+
+branding.news/feed
+
+startupnation.com/tag/branding/feed
+
+startups.co.uk/marketing/feed
+
+Digital Marketing & AI
+
+blog.orangemarketing.com/rss.xml
+
+artificial-intelligence.blog/rss.xml
+
+digitalagencynetwork.com/blog/feed
+
+Founder & Business Stories
+
+thestartupmag.com/category/marketing/feed
+
+fromfoundertoceo.com/feed
+
+startup-buzz.com/category/marketing/feed
+
+I have also created alerts on google through the2xmission@gmail.com account.
+
+So you can also fetch emails for it.
+
+What you need to do.
+
+Step 1: Go to the excelsheet https://docs.google.com/spreadsheets/d/1KOH5PDHeeA-MJ8TztKTs4EDwHXtPBEYF6hoD8Jssq0s/edit?gid=0#gid=0
+
+Step 2: Update rows
+
+Column A: Date
+
+Column B: Topic (This topic belongs to which category)
+
+Column C: Summary (And summary of the topic that how it is going to help)
+
+Column D: URL (Final link of the Article where this information is published)
+
+Column E: Status (Put Status "Pending")
+
+Column F: Source (From where you found this content Which RSS Feed/Google Alert)
+
+Column G: Content (Scrape the content of article from the URL that you copied in column d,Clean the content and copy)
+
+Use Monoco Editor for updating the excelsheet
+```
+
+**Expected output** (~367 tokens):
+
+```
+Role: Content research specialist
+
+Objective: Do content research for a digital marketing consultant
+
+Context:
+- For: digital marketing consultant
+- Expertise: ecommerce sales, lead generation and seo
+- Expertise: social media, branding
+- Platforms: LinkedIn, Instagram, YouTube
+- Content style: informative, knowledge sharing and updates happening around his subject
+
+Topics:
+- Marketing
+- Marketing Case studies
+- Branding
+- Business News
+- Brand news
+- AI updates
+- Digital marketing
+- Founder stories
+- Business stories
+
+Data Sources:
+RSS Feeds:
+- https://www.livemint.com/rss/companies
+- https://www.livemint.com/rss/industry
+- https://www.livemint.com/rss/education
+- https://www.livemint.com/rss/technology
+- https://www.livemint.com/rss/AI
+- https://hbr.org/rss
+- https://blog.hubspot.com/marketing/rss.xml
+- https://www.marketingweek.com/feed/
+- https://fieo.org/rss
+Startup Feeds:
+- yourstory.com/feed
+- news.crunchbase.com/feed
+- inc42.com/feed
+Business News:
+- economictimes.indiatimes.com/rssfeeds/default.rss
+- moxie.foxbusiness.com/google-developer-channel.xml
+- prod-qt-images.s3.amazonaws.com/rssfeeds/ndtvprofit.xml
+Branding & Marketing:
+- branding.news/feed
+- startupnation.com/tag/branding/feed
+- startups.co.uk/marketing/feed
+Digital Marketing & AI:
+- blog.orangemarketing.com/rss.xml
+- artificial-intelligence.blog/rss.xml
+- digitalagencynetwork.com/blog/feed
+Founder & Business Stories:
+- thestartupmag.com/category/marketing/feed
+- fromfoundertoceo.com/feed
+- startup-buzz.com/category/marketing/feed
+Google Alerts:
+- Email-based signals
+
+Steps:
+1. Go to the excelsheet [Google Sheets URL]
+2. Update rows
+
+Output Format:
+- Column A: Date
+- Column B: Topic (category)
+- Column C: Summary (how it helps)
+- Column D: URL (article link)
+- Column E: Status ("Pending")
+- Column F: Source (RSS Feed/Google Alert)
+- Column G: Content (scraped and cleaned article content)
+
+Tools:
+- Google Sheets
+- Monaco Editor
+
+Guidelines:
+- Prioritize recent and high-impact insights
+- Avoid duplicate topics
+- Clean scraped content (remove ads, noise, formatting issues)
+- Focus on insights useful for content creation
+```
+
+**Reduction**: ~-5% (slight expansion — workflow prompts add structure headers)
+
+**What this tests**:
+- **Workflow detection**: Prompt triggers workflow path (not content path) based on signals: Step N, Column A-G, RSS feeds, Google Sheets, scrape, daily basis, URLs
+- **Correct role inference**: "Content research specialist" (not "Professional content writer" or "Marketing strategist")
+- **No pattern leakage**: Does NOT inject "Define MVP scope", "Include relevant statistics", or "Provide a clear conclusion" — these are content-path patterns irrelevant to workflow prompts
+- **Alternate output format**: Uses Objective/Context/Topics/Data Sources/Steps/Output Format/Tools/Guidelines (not Task/Constraints/Key Points/Output Requirements)
+- **Data source categorization**: All 7 source categories preserved with 25+ URLs, parsed line-by-line with correct headers (RSS Feeds, Startup Feeds, Business News, etc.)
+- **Topic extraction**: All 9 topics extracted from the "find recent topics on:" section
+- **Context extraction**: Expertise areas, platforms (LinkedIn, Instagram, YouTube), content style
+- **Step extraction**: "Step 1" and "Step 2" parsed into structured steps
+- **Output column extraction**: All 7 Column A-G specifications extracted
+- **Tool detection**: Google Sheets (from "excelsheet" + Google Sheets URL) and Monaco Editor (from "Monoco Editor" — handles typo)
+- **Google Alerts detection**: Identified as a data source category
+- **Guidelines inference**: Derived from context (informative content → prioritize insights, social media → content creation focus, scrape → clean content)
+- **Workflow guard bypass**: Length guard skipped for workflow prompts since value is in restructuring, not compression
+
+---
+
 ## Running Tests
 
 Tests can be run manually via Node:

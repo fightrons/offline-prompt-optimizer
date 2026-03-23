@@ -372,6 +372,201 @@ I don't need anything super detailed, just something clear and practical that I 
   });
 });
 
+// ─── Test 8: Workflow Prompt (Content Research Pipeline) ───
+
+const WORKFLOW_INPUT = `Act as an content research person.
+
+You need to do content research for a digital marketing consultant
+
+who has deep knowledge on ecommerce sales, lead generation and seo.
+
+Secoundary he also has knowledge on social media, branding.
+
+So for his social media plaform (linkedin, instagram and youtube)
+
+how will this be optimized
+
+He want's his social media content more towards informative, knowledge sharing and updates happening around his subject.
+
+You have to find recent topics on:
+
+Marketing
+
+Marketing Case studies
+
+Branding
+
+Business News
+
+Brand news
+
+AI updates
+
+Digital marketing
+
+Founder stories
+
+Business stories
+
+Here are some rss feed and websites for you to research on daily basis
+
+RSS Feeds
+
+https://www.livemint.com/rss/companies
+
+https://www.livemint.com/rss/industry
+
+https://www.livemint.com/rss/education
+
+https://www.livemint.com/rss/technology
+
+https://www.livemint.com/rss/AI
+
+https://hbr.org/rss
+
+https://blog.hubspot.com/marketing/rss.xml
+
+https://www.marketingweek.com/feed/
+
+https://fieo.org/rss
+
+Startup Feeds
+
+yourstory.com/feed
+
+news.crunchbase.com/feed
+
+inc42.com/feed
+
+Business News
+
+economictimes.indiatimes.com/rssfeeds/default.rss
+
+moxie.foxbusiness.com/google-developer-channel.xml
+
+prod-qt-images.s3.amazonaws.com/rssfeeds/ndtvprofit.xml
+
+Branding & Marketing
+
+branding.news/feed
+
+startupnation.com/tag/branding/feed
+
+startups.co.uk/marketing/feed
+
+Digital Marketing & AI
+
+blog.orangemarketing.com/rss.xml
+
+artificial-intelligence.blog/rss.xml
+
+digitalagencynetwork.com/blog/feed
+
+Founder & Business Stories
+
+thestartupmag.com/category/marketing/feed
+
+fromfoundertoceo.com/feed
+
+startup-buzz.com/category/marketing/feed
+
+I have also created alerts on google through the2xmission@gmail.com account.
+
+So you can also fetch emails for it.
+
+What you need to do.
+
+Step 1: Go to the excelsheet https://docs.google.com/spreadsheets/d/1KOH5PDHeeA-MJ8TztKTs4EDwHXtPBEYF6hoD8Jssq0s/edit?gid=0#gid=0
+
+Step 2: Update rows
+
+Column A: Date
+
+Column B: Topic (This topic belongs to which category)
+
+Column C: Summary (And summary of the topic that how it is going to help)
+
+Column D: URL (Final link of the Article where this information is published)
+
+Column E: Status (Put Status "Pending")
+
+Column F: Source (From where you found this content Which RSS Feed/Google Alert)
+
+Column G: Content (Scrape the content of article from the URL that you copied in column d,Clean the content and copy)
+
+Use Monoco Editor for updating the excelsheet`;
+
+describe('Test 8: Workflow Prompt — Content Research Pipeline', () => {
+  const result = optimizeLocal(WORKFLOW_INPUT);
+
+  it('should detect as workflow prompt (uses workflow format, not content format)', () => {
+    expect(result.optimizedPrompt).toMatch(/^Role:/m);
+    expect(result.optimizedPrompt).toMatch(/\bObjective:/m);
+    // Should NOT have content-format sections
+    expect(result.optimizedPrompt).not.toMatch(/^Key points:/m);
+    expect(result.optimizedPrompt).not.toMatch(/^Constraints:/m);
+  });
+
+  it('should infer a research-oriented role, not "Professional content writer"', () => {
+    expect(result.optimizedPrompt).not.toMatch(/Professional content writer/i);
+    expect(result.optimizedPrompt).toMatch(/research/i);
+  });
+
+  it('should extract data sources', () => {
+    expect(result.optimizedPrompt).toMatch(/Data Sources:/m);
+    expect(result.optimizedPrompt).toMatch(/livemint/i);
+    expect(result.optimizedPrompt).toMatch(/hbr\.org/i);
+  });
+
+  it('should extract output format columns', () => {
+    expect(result.optimizedPrompt).toMatch(/Output Format:/m);
+    expect(result.optimizedPrompt).toMatch(/Column A/);
+    expect(result.optimizedPrompt).toMatch(/Column B/);
+    expect(result.optimizedPrompt).toMatch(/Column G/);
+  });
+
+  it('should extract steps', () => {
+    expect(result.optimizedPrompt).toMatch(/Steps:/m);
+  });
+
+  it('should identify tools', () => {
+    expect(result.optimizedPrompt).toMatch(/Tools:/m);
+    expect(result.optimizedPrompt).toMatch(/Google Sheets/i);
+  });
+
+  it('should extract topics', () => {
+    expect(result.optimizedPrompt).toMatch(/Topics:/m);
+    expect(result.optimizedPrompt).toMatch(/Marketing/);
+    expect(result.optimizedPrompt).toMatch(/Branding/i);
+  });
+
+  it('should extract platform context', () => {
+    expect(result.optimizedPrompt).toMatch(/LinkedIn/i);
+    expect(result.optimizedPrompt).toMatch(/Instagram/i);
+    expect(result.optimizedPrompt).toMatch(/YouTube/i);
+  });
+
+  it('should detect Google Alerts as a data source', () => {
+    expect(result.optimizedPrompt).toMatch(/Google Alerts/i);
+  });
+
+  it('should NOT have pattern leakage (no MVP, no "Include statistics")', () => {
+    expect(result.optimizedPrompt).not.toMatch(/Define MVP scope/i);
+    expect(result.optimizedPrompt).not.toMatch(/Include relevant statistics/i);
+    expect(result.optimizedPrompt).not.toMatch(/Provide a clear conclusion/i);
+  });
+
+  it('should report workflow detection in changes', () => {
+    expect(result.changes.some(c => /workflow/i.test(c))).toBe(true);
+  });
+
+  it('should restructure effectively (workflow prompts prioritize organization over compression)', () => {
+    // Workflow prompts may slightly expand due to added structure headers (Role, Objective, Steps, etc.)
+    // The value is in restructuring, not compression — verify it doesn't balloon excessively
+    expect(result.reduction).toBeGreaterThan(-15); // no more than 15% expansion
+  });
+});
+
 // ─── Token Estimation ───
 
 describe('Token Estimation', () => {
