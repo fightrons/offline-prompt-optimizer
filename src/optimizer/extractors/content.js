@@ -1,176 +1,6 @@
-// Hybrid prompt optimizer
-// Layer 1: Hard cleanup (remove fluff)
-// Layer 2: Extract intent, constraints, requirements from conversational mess
-// Layer 3: Rebuild as structured prompt
-// Optional: AI deep optimize
+import { hardCleanup, compressClarity, fixCasing } from '../utils.js';
 
-// ─── Token estimation (tiktoken — model-accurate, lazy-loaded) ───
-
-let enc = null;
-
-async function getEncoder() {
-  if (!enc) {
-    const { encodingForModel } = await import('js-tiktoken');
-    enc = encodingForModel('gpt-4o-mini');
-  }
-  return enc;
-}
-
-export function estimateTokens(text) {
-  if (!text.trim()) return 0;
-  if (enc) return enc.encode(text).length;
-  // Fallback until encoder loads — heuristic
-  return Math.ceil(text.trim().split(/\s+/).length * 1.3);
-}
-
-// Pre-load encoder on import so it's ready by the time user clicks optimize
-getEncoder();
-
-// GPT-4o-mini pricing: $0.15 per 1M input tokens, $0.60 per 1M output tokens
-const COST_PER_INPUT_TOKEN = 0.15 / 1_000_000;
-const COST_PER_OUTPUT_TOKEN = 0.60 / 1_000_000;
-
-export function estimateCost(inputTokens, outputTokens) {
-  return inputTokens * COST_PER_INPUT_TOKEN + outputTokens * COST_PER_OUTPUT_TOKEN;
-}
-
-// ─── Layer 1: Hard cleanup ───
-
-const SOFT_LANGUAGE = [
-  /\b(please|kindly|if you could|if you would|would you mind)\b/gi,
-  /\b(i would like you to|i want you to|i need you to|i'd like you to)\b/gi,
-  /\b(maybe|perhaps|possibly|I think|I believe|I feel like|it seems like)\b/gi,
-  /\b(sort of|kind of|just|really|very|actually|basically|essentially|literally|honestly|frankly)\b/gi,
-  /\b(as an ai|as a language model|you are an ai|you are a language model)\b/gi,
-  /^(can you|could you|will you|would you)\s+/gim,
-  /\bI would appreciate it if you could\b/gi,
-  /\bdo not hesitate to\b/gi,
-  /\b(hello|hi|hey|dear)\b,?\s*/gi,
-  /\bthank you( so much| very much)?\s*[.!]?\s*/gi,
-  /\bthanks\s*[.!]?\s*/gi,
-];
-
-const VERBOSE_TO_CONCISE = [
-  [/\bin order to\b/gi, 'to'],
-  [/\bdue to the fact that\b/gi, 'because'],
-  [/\bfor the purpose of\b/gi, 'to'],
-  [/\bin the event that\b/gi, 'if'],
-  [/\bat this point in time\b/gi, 'now'],
-  [/\bat the present time\b/gi, 'now'],
-  [/\bprior to\b/gi, 'before'],
-  [/\bsubsequent to\b/gi, 'after'],
-  [/\bin spite of the fact that\b/gi, 'although'],
-  [/\bwith regard to\b/gi, 'about'],
-  [/\bwith respect to\b/gi, 'about'],
-  [/\bin regard to\b/gi, 'about'],
-  [/\bpertaining to\b/gi, 'about'],
-  [/\bin addition to\b/gi, 'besides'],
-  [/\bas a result of\b/gi, 'because of'],
-  [/\bby means of\b/gi, 'by'],
-  [/\bin the process of\b/gi, 'while'],
-  [/\bit is important to note that\b/gi, ''],
-  [/\bit should be noted that\b/gi, ''],
-  [/\bit is worth mentioning that\b/gi, ''],
-  [/\bneedless to say\b/gi, ''],
-  [/\bas a matter of fact\b/gi, ''],
-  [/\bthe fact that\b/gi, 'that'],
-  [/\bin light of\b/gi, 'given'],
-  [/\ba large number of\b/gi, 'many'],
-  [/\ba significant number of\b/gi, 'many'],
-  [/\bthe majority of\b/gi, 'most'],
-  [/\bis able to\b/gi, 'can'],
-  [/\bhas the ability to\b/gi, 'can'],
-  [/\bmake sure that\b/gi, 'ensure'],
-  [/\btake into consideration\b/gi, 'consider'],
-  [/\btake into account\b/gi, 'consider'],
-  [/\bgive an explanation of\b/gi, 'explain'],
-  [/\bprovide a description of\b/gi, 'describe'],
-  [/\bprovide an explanation of\b/gi, 'explain'],
-  [/\bprovide a summary of\b/gi, 'summarize'],
-  [/\bprovide a list of\b/gi, 'list'],
-  [/\bprovide me with\b/gi, 'give me'],
-];
-
-const REDUNDANT_PATTERNS = [
-  /\b(make sure|ensure) (that )?you (are |do )?/gi,
-  /\bplease note that\b/gi,
-  /\bkeep in mind that\b/gi,
-  /\bremember that\b/gi,
-  /\bdon't forget to\b/gi,
-  /\bI want the (output|result|response|answer) to be\b/gi,
-  /\balso,?\s*/gi,
-];
-
-// Task normalization: vague content descriptions → clear format
-const TASK_NORMALIZATIONS = [
-  [/\b(?:creat(?:e|ing)|writ(?:e|ing)|produc(?:e|ing))\s+(?:some\s+)?(?:sort of\s+)?(?:content|something),?\s*(?:like\s+)?(?:maybe\s+)?(?:a\s+)?(?:blog\s*(?:post)?|article)\s*(?:or\s+(?:article|blog(?:\s*post)?)\s*)*(?:or\s+something\s+(?:along\s+those\s+lines|like\s+that)\s*|(?:or\s+something\s*))?(?:whatever\s+works?)?\b/gi, 'write a blog post'],
-  [/\b(?:some\s+)?(?:kind\s+of\s+|sort\s+of\s+)?(?:guide|tutorial|walkthrough)\s*(?:or\s+(?:tutorial|guide|walkthrough)\s*)*(?:or\s+whatever(?:\s+you\s+want\s+to\s+call\s+it)?)\s*/gi, 'a guide '],
-  [/\b(?:some\s+)?(?:kind\s+of\s+|sort\s+of\s+)?(?:guide|tutorial|walkthrough)\s*(?:or\s+(?:tutorial|guide|walkthrough)\s*)+/gi, 'a guide'],
-  [/\b(?:some\s+)?(?:sort\s+of\s+)?(?:content|piece),?\s*(?:like\s+)?(?:maybe\s+)?(?:a\s+)?blog\b/gi, 'a blog post'],
-  [/\bor whatever you want to call it\b/gi, ''],
-  [/\bwhatever works?\b/gi, ''],
-  [/\bif it's not too much trouble\b/gi, ''],
-  [/\bif that makes sense\b/gi, ''],
-  [/\byou know,?\s*/gi, ''],
-  [/\bI almost forgot,?\s*/gi, ''],
-  [/\bone more thing,?\s*/gi, ''],
-  [/\bthat kind of thing\b/gi, ''],
-  [/\byou're the best\b/gi, ''],
-  [/\bthanks so much\b/gi, ''],
-  [/\bI've been thinking about this for a while\b/gi, ''],
-  [/\bI was wondering\b/gi, ''],
-  [/\byeah,?\s*/gi, ''],
-  [/\bI guess\b/gi, ''],
-  [/\bor something(?:\s+like that)?\b/gi, ''],
-  [/\balong those lines\b/gi, ''],
-  [/\bpretty much\b/gi, ''],
-  [/\bnot too (\w+)\s+(?:where|because|but)\s+.+?(?:\.|,|$)/gim, ''],
-  [/\bI'm not super strict about .+?(?:\.|,|$)/gim, ''],
-  [/\bit's okay if not\b/gi, ''],
-  [/\bbut it's okay\b/gi, ''],
-  [/\bif possible\b/gi, ''],
-  [/\bif you can\b/gi, ''],
-  [/\bjust to wrap things up nicely\b/gi, ''],
-  [/\bjust something that looks clean\b/gi, ''],
-  [/\bI've been thinking about\b/gi, ''],
-  [/\bnothing too fancy\b/gi, ''],
-  [/\bbefore going all in\b/gi, ''],
-  [/\bI've seen a lot of people\b/gi, ''],
-  [/\bI'm not sure (?:which one to pick|what to use|about)\b/gi, ''],
-  [/\blike a rough\b/gi, 'a'],
-];
-
-function hardCleanup(text) {
-  let result = text;
-  // Task normalization first (before soft language removal)
-  for (const [pattern, replacement] of TASK_NORMALIZATIONS) {
-    result = result.replace(pattern, replacement);
-  }
-  for (const [pattern, replacement] of VERBOSE_TO_CONCISE) {
-    result = result.replace(pattern, replacement);
-  }
-  for (const pattern of SOFT_LANGUAGE) {
-    result = result.replace(pattern, '');
-  }
-  for (const pattern of REDUNDANT_PATTERNS) {
-    result = result.replace(pattern, '');
-  }
-  // Collapse whitespace
-  result = result
-    .replace(/[ \t]+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/^ +/gm, '')
-    .replace(/ +$/gm, '')
-    .replace(/\.\s*\./g, '.')
-    .replace(/,\s*,/g, ',')
-    .replace(/\s+([.,!?])/g, '$1')
-    .trim();
-  return result;
-}
-
-// ─── Layer 2: Extract structured components ───
-
-function extractRole(text) {
+export function extractRole(text) {
   const rolePatterns = [
     /(?:you are|act as|role:?\s*)\s*(?:a |an )?([\w\s]+(?:writer|engineer|developer|designer|analyst|expert|teacher|educator|consultant|advisor|strategist|planner|scientist|researcher|translator|editor|reviewer|manager|architect|specialist))(?:\.|,|$)/im,
     /(?:imagine you(?:'re| are))\s+(?:a |an )?([\w\s]+(?:writer|engineer|developer|designer|analyst|expert|teacher|educator|consultant|advisor|strategist))(?:\.|,|$)/im,
@@ -184,7 +14,7 @@ function extractRole(text) {
   return null;
 }
 
-function inferRole(task) {
+export function inferRole(task) {
   if (!task) return null;
   const lower = task.toLowerCase();
 
@@ -223,7 +53,7 @@ function inferRole(task) {
   return 'Domain expert';
 }
 
-function extractTask(text) {
+export function extractTask(text) {
   const cleaned = text
     .replace(/\b(you are|act as|role:?|imagine you).+?[.,]/gi, '')
     .trim();
@@ -324,7 +154,7 @@ function extractTask(text) {
   return null;
 }
 
-function extractConstraints(text) {
+export function extractConstraints(text) {
   const constraints = [];
   const lower = text.toLowerCase();
 
@@ -470,22 +300,7 @@ function extractConstraints(text) {
   return constraints;
 }
 
-// Clarity compression: "because it provides flexibility" → "Flexibility as a key driver"
-const CLARITY_COMPRESSIONS = [
-  [/\bbecause (?:it |they |this )(?:provides?|offers?|gives?|enables?|allows?) (.+)/gi, (_, thing) => `${thing.replace(/^\w/, c => c.toUpperCase())} as a key driver`],
-  [/\b(?:it |they |this )(?:provides?|offers?|gives?) (.+?) (?:for|to) (.+)/gi, (_, what, whom) => `${what.replace(/^\w/, c => c.toUpperCase())} for ${whom}`],
-  [/\bthe (?:main |primary |key )?(?:reason|benefit|advantage) (?:is |being )(?:that )?(.+)/gi, (_, reason) => reason.replace(/^\w/, c => c.toUpperCase())],
-];
-
-function compressClarity(text) {
-  let result = text;
-  for (const [pattern, replacement] of CLARITY_COMPRESSIONS) {
-    result = result.replace(pattern, replacement);
-  }
-  return result;
-}
-
-function extractKeyPoints(text, originalText) {
+export function extractKeyPoints(text, originalText) {
   const points = [];
   const lower = text.toLowerCase();
   const sentences = text.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
@@ -719,8 +534,7 @@ function extractKeyPoints(text, originalText) {
   });
 }
 
-// Deduplicate key points against task — don't repeat what the task already says
-function deduplicateAgainstTask(points, task) {
+export function deduplicateAgainstTask(points, task) {
   if (!task) return points;
   const taskWords = new Set(task.toLowerCase().split(/\s+/).filter(w => w.length > 3));
   return points.filter(point => {
@@ -731,8 +545,7 @@ function deduplicateAgainstTask(points, task) {
   });
 }
 
-// Deduplicate output requirements against key points + within themselves
-function deduplicateRequirements(requirements, keyPoints) {
+export function deduplicateRequirements(requirements, keyPoints) {
   // First: deduplicate within requirements (e.g., "Include statistics" vs "Include relevant statistics")
   const unique = [];
   for (const req of requirements) {
@@ -759,7 +572,7 @@ function deduplicateRequirements(requirements, keyPoints) {
   });
 }
 
-function extractOutputRequirements(text) {
+export function extractOutputRequirements(text) {
   const requirements = [];
   const lower = text.toLowerCase();
 
@@ -829,315 +642,7 @@ function extractOutputRequirements(text) {
   return requirements;
 }
 
-// Fix common acronym/proper noun casing
-function fixCasing(text) {
-  return text
-    .replace(/\bai\b/g, 'AI')
-    .replace(/\bapi\b/gi, 'API')
-    .replace(/\bapis\b/gi, 'APIs')
-    .replace(/\bml\b/gi, 'ML')
-    .replace(/\bui\b/gi, 'UI')
-    .replace(/\bux\b/gi, 'UX')
-    .replace(/\bsql\b/gi, 'SQL')
-    .replace(/\bcss\b/gi, 'CSS')
-    .replace(/\bhtml\b/gi, 'HTML')
-    .replace(/\bjson\b/gi, 'JSON')
-    .replace(/\byaml\b/gi, 'YAML')
-    .replace(/\bci\/cd\b/gi, 'CI/CD')
-    .replace(/\bdevops\b/gi, 'DevOps')
-    .replace(/\bdocker\b/gi, 'Docker')
-    .replace(/\bgithub\b/gi, 'GitHub')
-    .replace(/\bjenkins\b/gi, 'Jenkins');
-}
-
-// ─── Workflow Detection ───
-
-function detectPromptType(text) {
-  const lower = text.toLowerCase();
-  const signals = [
-    /\bstep\s*\d+\b/i,                          // "Step 1", "Step 2"
-    /\bcolumn\s*[a-g]\b/i,                       // "Column A", "Column B"
-    /\brss\s*feed/i,                             // RSS feeds
-    /\bgoogle\s*(?:sheet|alert|doc)/i,           // Google tools
-    /\b(?:spreadsheet|excel\s*sheet)\b/i,        // Spreadsheets
-    /\b(?:scrape|fetch|crawl)\b/i,               // Data collection
-    /\bupdate\s*rows?\b/i,                       // Data entry
-    /\b(?:daily|weekly|recurring)\s*(?:basis|task|research)\b/i, // Recurring workflows
-    /https?:\/\/[^\s]+(?:rss|feed|xml)\b/i,     // RSS URLs
-    /\b\w+\.com\/(?:rss|feed)\b/i,              // Feed URLs
-  ];
-  const matchCount = signals.filter(p => p.test(lower)).length;
-  // Workflow if 3+ signals, or has both steps and structured output (columns/sheets)
-  if (matchCount >= 3) return 'workflow';
-  if (/\bstep\s*\d+\b/i.test(lower) && /\bcolumn\s*[a-g]\b/i.test(lower)) return 'workflow';
-  return 'content';
-}
-
-function extractWorkflowComponents(text, originalText) {
-  const lower = (originalText || text).toLowerCase();
-  const orig = originalText || text;
-
-  // --- Role ---
-  let role = extractRole(orig);
-  if (!role) {
-    // Financial/analytical intent takes priority — objective is analysis, not just content gathering
-    if (/\b(?:financial|finance|cost\s+optimi|revenue|pricing\s+strateg|business\s+margin|profitability|economic|investment)\b/i.test(lower)
-      && /\b(?:insight|decision|analy|actionable|strateg)\b/i.test(lower)) {
-      role = 'Financial analyst';
-    } else if (/\b(?:research|rss|scrape|content\s+pipeline|daily\s+(?:research|content))\b/i.test(lower)) {
-      role = 'Content research specialist';
-    } else if (/\b(?:automat|workflow|pipeline|etl|data\s+(?:entry|collection))\b/i.test(lower)) {
-      role = 'Workflow automation specialist';
-    } else {
-      role = 'Domain expert';
-    }
-  }
-
-  // --- Objective ---
-  // Try to extract from "you need to" / "what you need to do" / opening context
-  let objective = null;
-  const objPatterns = [
-    /(?:you\s+(?:need|have)\s+to|your\s+(?:task|job|goal)\s+is\s+to)\s+(.+?)(?:\.\s|\n|$)/im,
-    /(?:objective|goal|purpose)\s*[:—]\s*(.+?)(?:\.\s|\n|$)/im,
-    /\b(?:the\s+goal\s+is\s+to)\s+(.+?)(?:\.\s|\n|$)/im,
-    /\bneed\s+help\s+(?:setting\s+up|with)\s+(.+?)(?:\.\s|\n|$)/im,
-  ];
-  for (const p of objPatterns) {
-    const m = orig.match(p);
-    if (m && m[1].trim().length > 10) {
-      objective = m[1].trim().replace(/^\w/, c => c.toUpperCase());
-      break;
-    }
-  }
-  // Fallback: extract task the normal way
-  if (!objective) {
-    objective = extractTask(text);
-  }
-
-  // --- Context ---
-  const context = [];
-  // Extract "who is this for" context
-  const forMatch = orig.match(/\b(?:for|who)\s+(?:a\s+)?([\w\s]+(?:consultant|specialist|manager|engineer|expert|person|client|team|company|owner|business))\b/i);
-  if (forMatch) {
-    context.push(`For: ${forMatch[1].trim()}`);
-  }
-  // Extract expertise/knowledge areas
-  const knowledgeMatches = orig.match(/\b(?:deep\s+)?knowledge\s+(?:on|in|of)\s+(.+?)(?:\.\s|\n|$)/gim);
-  if (knowledgeMatches) {
-    for (const km of knowledgeMatches) {
-      const detail = km.replace(/\b(?:deep\s+)?knowledge\s+(?:on|in|of)\s+/i, '').trim().replace(/[.\n]+$/, '');
-      if (detail.length > 3) context.push(`Expertise: ${detail}`);
-    }
-  }
-  // Extract platform/channel info
-  const platformMatch = orig.match(/\b(?:social\s+media\s+)?(?:platform|channel)s?\s*\(([^)]+)\)/i)
-    || orig.match(/\bfor\s+(?:his|her|their)\s+(?:social\s+media\s+)?(?:platform|channel)?s?\s*\(([^)]+)\)/i);
-  if (platformMatch) {
-    context.push(`Platforms: ${platformMatch[1].trim()}`);
-  } else {
-    const platforms = [];
-    if (/\blinkedin\b/i.test(lower)) platforms.push('LinkedIn');
-    if (/\binstagram\b/i.test(lower)) platforms.push('Instagram');
-    if (/\byoutube\b/i.test(lower)) platforms.push('YouTube');
-    if (/\btwitter\b/i.test(lower) || /\b(?:x\.com)\b/i.test(lower)) platforms.push('Twitter/X');
-    if (platforms.length > 0) context.push(`Platforms: ${platforms.join(', ')}`);
-  }
-  // Extract content goal/style
-  const goalMatch = orig.match(/\bcontent\s+(?:more\s+)?towards?\s+(.+?)(?:\.\s|\n|$)/i);
-  if (goalMatch) {
-    context.push(`Content style: ${goalMatch[1].trim()}`);
-  }
-
-  // --- Topics ---
-  const topics = [];
-  // Look for list-like topic sections — match "topics on:", "find topics on:", etc.
-  const topicPatterns = [
-    /\b(?:topics?|categories|subjects?)\s*(?:to\s+(?:research|cover|find))?\s*(?:on)?:?\s*\n([\s\S]*?)(?:\n\s*\n(?:\s*\n)*(?:RSS|Data|Source|http|Here|Step|What|You|I\s)|\n(?:RSS|Data|Source|http|Here|Step|What|You|I\s))/im,
-    /(?:find|research|cover)\s+(?:recent\s+)?topics?\s+(?:on|about)\s*:?\s*\n([\s\S]*?)(?:\n\s*\n(?:\s*\n)*(?:RSS|Data|Source|http|Here|Step|What|You|I\s)|\n(?:RSS|Data|Source|http|Here|Step|What|You|I\s))/im,
-  ];
-  for (const tp of topicPatterns) {
-    if (topics.length > 0) break;
-    const topicSection = orig.match(tp);
-    if (topicSection) {
-      const tLines = topicSection[1].split('\n')
-        .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())
-        .filter(l => l.length > 2 && l.length < 80 && !/^https?:\/\//i.test(l));
-      topics.push(...tLines);
-    }
-  }
-
-  // Fallback: extract inline topic mentions like "things like X, Y, Z" or "like X, Y, and Z"
-  if (topics.length === 0) {
-    const inlineTopicPatterns = [
-      /\b(?:things\s+like|such\s+as|including|like)\s+(.+?)(?:\.\s|\n\n|$)/im,
-      /\b(?:keywords?\s+like|alerts?\s+for\s+keywords?\s+like)\s+(.+?)(?:\.\s|\n\n|$)/im,
-    ];
-    for (const itp of inlineTopicPatterns) {
-      if (topics.length > 0) break;
-      const inlineMatch = orig.match(itp);
-      if (inlineMatch) {
-        // Split comma/and-separated items, clean quotes
-        const items = inlineMatch[1]
-          .split(/,\s*(?:and\s+)?|\s+and\s+/)
-          .map(i => i.replace(/^["'"]+|["'"]+$/g, '').trim())
-          .filter(i => i.length > 2 && i.length < 60);
-        if (items.length >= 2) topics.push(...items);
-      }
-    }
-  }
-
-  // --- Data Sources ---
-  const dataSources = {};
-
-  // Split original text into lines for section-based parsing
-  const lines = orig.split('\n');
-  let currentCategory = null;
-  const urlRegex = /^(?:https?:\/\/)?[\w.-]+(?:\.[\w.-]+)+(?:\/[\w./?&=%#-]*)?$/;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    // Check if this line is a URL-like entry
-    const isUrl = urlRegex.test(line) && line.includes('.') && !line.includes('@') && line.length > 8;
-
-    if (isUrl) {
-      // Add to current category or create default
-      const cat = currentCategory || 'Sources';
-      if (!dataSources[cat]) dataSources[cat] = [];
-      dataSources[cat].push(line);
-    } else if (!isUrl && line.length > 2 && line.length < 60) {
-      // Check if next non-empty line is a URL — if so, this is a category header
-      let j = i + 1;
-      while (j < lines.length && !lines[j].trim()) j++;
-      if (j < lines.length) {
-        const nextLine = lines[j].trim();
-        const nextIsUrl = urlRegex.test(nextLine) && nextLine.includes('.') && nextLine.length > 8;
-        if (nextIsUrl) {
-          currentCategory = line.replace(/[:.]$/, '').trim();
-        }
-      }
-    }
-  }
-
-  // Check for Google Alerts
-  if (/\bgoogle\s*alerts?\b/i.test(lower)) {
-    dataSources['Google Alerts'] = ['Email-based signals'];
-  }
-
-  // --- Steps ---
-  const steps = [];
-  const stepPattern = /\bstep\s*(\d+)\s*:?\s*(.+?)(?:\n|$)/gim;
-  let stepMatch;
-  while ((stepMatch = stepPattern.exec(orig)) !== null) {
-    const stepText = stepMatch[2].trim();
-    if (stepText.length > 3) {
-      steps.push(stepText.replace(/^\w/, c => c.toUpperCase()));
-    }
-  }
-  // Also extract "What you need to do" numbered items
-  if (steps.length === 0) {
-    const numberedPattern = /(?:^|\n)\s*(\d+)[.)]\s*(.+?)(?:\n|$)/gim;
-    let nm;
-    while ((nm = numberedPattern.exec(orig)) !== null) {
-      const stepText = nm[2].trim();
-      if (stepText.length > 3) {
-        steps.push(stepText.replace(/^\w/, c => c.toUpperCase()));
-      }
-    }
-  }
-
-  // --- Output Format ---
-  const outputFormat = [];
-  const columnPattern = /\bcolumn\s*([a-g])\s*:?\s*(.+?)(?:\n|$)/gim;
-  let colMatch;
-  while ((colMatch = columnPattern.exec(orig)) !== null) {
-    const col = colMatch[1].toUpperCase();
-    let desc = colMatch[2].trim().replace(/^\(/, '').replace(/\)$/, '');
-    // Clean parenthetical details for cleaner format
-    const parenMatch = desc.match(/^(.+?)\s*\((.+)\)$/);
-    if (parenMatch) {
-      desc = `${parenMatch[1].trim()} — ${parenMatch[2].trim()}`;
-    }
-    outputFormat.push(`Column ${col}: ${desc}`);
-  }
-
-  // --- Tools ---
-  const tools = [];
-  if (/\bgoogle\s*sheet/i.test(lower) || /\bexcel\s*sheet\b/i.test(lower) && /\bgoogle\.com\/spreadsheets\b/i.test(lower)) tools.push('Google Sheets');
-  if (/\bmon[ao]co\s*editor/i.test(lower)) tools.push('Monaco Editor');
-  if (/\bexcel\b/i.test(lower) && !tools.includes('Google Sheets')) tools.push('Excel');
-  if (/\bnotion\b/i.test(lower)) tools.push('Notion');
-  if (/\bairtable\b/i.test(lower)) tools.push('Airtable');
-
-  // --- Guidelines ---
-  const guidelines = [];
-  if (/\binformative\b/i.test(lower)) guidelines.push('Prioritize recent and high-impact insights');
-  if (/\bavoid\s+duplicate/i.test(lower) || topics.length > 0) guidelines.push('Avoid duplicate topics');
-  if (/\bscrape\b/i.test(lower) || /\bclean\b/i.test(lower)) guidelines.push('Clean scraped content (remove ads, noise, formatting issues)');
-  if (/\b(?:actionable|useful|relevant)\b/i.test(lower)) guidelines.push('Ensure summaries are actionable and relevant');
-  if (/\bdecision[- ]?making\b/i.test(lower) || /\b(?:financial|business)\s+(?:insight|decision)\b/i.test(lower)) guidelines.push('Focus on relevance to business decision-making');
-  if (/\bavoid\s+(?:generic|general)\b/i.test(lower)) guidelines.push('Filter out generic news with no practical value');
-  if (/\bpractical\s+takeaway/i.test(lower) || /\bhighlight\s+(?:practical|key)\b/i.test(lower)) guidelines.push('Highlight practical takeaways');
-  if (/\bcontent\s+creat/i.test(lower) || /\bsocial\s+media\b/i.test(lower)) guidelines.push('Focus on insights useful for content creation');
-
-  return { role, objective, context, topics, dataSources, steps, outputFormat, tools, guidelines };
-}
-
-function buildWorkflowPrompt(components) {
-  const sections = [];
-
-  if (components.role) {
-    sections.push(`Role: ${components.role}`);
-  }
-
-  if (components.objective) {
-    sections.push(`Objective: ${components.objective}`);
-  }
-
-  if (components.context.length > 0) {
-    sections.push(`Context:\n${components.context.map(c => `- ${c}`).join('\n')}`);
-  }
-
-  if (components.topics.length > 0) {
-    sections.push(`Topics:\n${components.topics.map(t => `- ${t}`).join('\n')}`);
-  }
-
-  if (Object.keys(components.dataSources).length > 0) {
-    let sourceText = 'Data Sources:';
-    for (const [category, urls] of Object.entries(components.dataSources)) {
-      if (Object.keys(components.dataSources).length === 1 && category === 'Sources') {
-        sourceText += '\n' + urls.map(u => `- ${u}`).join('\n');
-      } else {
-        sourceText += `\n${category}:`;
-        sourceText += '\n' + urls.map(u => `- ${u}`).join('\n');
-      }
-    }
-    sections.push(sourceText);
-  }
-
-  if (components.steps.length > 0) {
-    sections.push(`Steps:\n${components.steps.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
-  }
-
-  if (components.outputFormat.length > 0) {
-    sections.push(`Output Format:\n${components.outputFormat.map(f => `- ${f}`).join('\n')}`);
-  }
-
-  if (components.tools.length > 0) {
-    sections.push(`Tools:\n${components.tools.map(t => `- ${t}`).join('\n')}`);
-  }
-
-  if (components.guidelines.length > 0) {
-    sections.push(`Guidelines:\n${components.guidelines.map(g => `- ${g}`).join('\n')}`);
-  }
-
-  return fixCasing(sections.join('\n\n'));
-}
-
-// ─── Layer 3: Build structured prompt ───
-
-function buildStructuredPrompt(role, task, constraints, keyPoints, outputRequirements, cleanedText) {
+export function buildStructuredPrompt(role, task, constraints, keyPoints, outputRequirements, cleanedText) {
   const sections = [];
 
   // Role
@@ -1170,180 +675,4 @@ function buildStructuredPrompt(role, task, constraints, keyPoints, outputRequire
   }
 
   return fixCasing(sections.join('\n\n'));
-}
-
-// ─── Main local optimize ───
-
-export function optimizeLocal(input) {
-  if (!input.trim()) {
-    return { optimizedPrompt: '', changes: [], beforeTokens: 0, afterTokens: 0, reduction: 0 };
-  }
-
-  const changes = [];
-
-  // Detect prompt type: workflow vs content
-  const promptType = detectPromptType(input);
-
-  // Layer 1: Hard cleanup
-  const cleaned = hardCleanup(input);
-  if (cleaned !== input.trim()) {
-    changes.push('Reduced verbosity and removed soft language');
-  }
-
-  let optimized;
-
-  if (promptType === 'workflow') {
-    // ─── Workflow path: extract structured workflow components ───
-    const components = extractWorkflowComponents(cleaned, input);
-    optimized = buildWorkflowPrompt(components);
-    changes.push('Detected workflow prompt — used structured workflow format');
-    if (components.role) changes.push(`Inferred role: "${components.role}"`);
-    if (components.topics.length > 0) changes.push(`Extracted ${components.topics.length} topic(s)`);
-    if (Object.keys(components.dataSources).length > 0) changes.push(`Extracted ${Object.keys(components.dataSources).length} data source category(ies)`);
-    if (components.steps.length > 0) changes.push(`Extracted ${components.steps.length} step(s)`);
-    if (components.outputFormat.length > 0) changes.push(`Extracted ${components.outputFormat.length} output column(s)`);
-    if (components.tools.length > 0) changes.push(`Identified ${components.tools.length} tool(s)`);
-  } else {
-    // ─── Content path: original extraction pipeline ───
-
-  // Layer 2: Extract structure
-  const explicitRole = extractRole(input);
-  const task = extractTask(cleaned);
-  const role = explicitRole || inferRole(task);
-  const constraints = extractConstraints(input);
-  let keyPoints = extractKeyPoints(cleaned, input);
-  let outputRequirements = extractOutputRequirements(cleaned);
-
-  // Split: "Include/Add X" in key points → move to requirements (but not "Provide optional..." feature descriptions)
-  const promoted = [];
-  keyPoints = keyPoints.filter(p => {
-    if (/^(Include|Add)\b/i.test(p) || /^Provide\s+(?:a\s+)?(?:clear|relevant|detailed)\b/i.test(p)) {
-      if (!outputRequirements.includes(p)) promoted.push(p);
-      return false;
-    }
-    return true;
-  });
-  outputRequirements = [...outputRequirements, ...promoted];
-
-  // Deduplicate: key points vs task, requirements vs key points
-  keyPoints = deduplicateAgainstTask(keyPoints, task);
-  outputRequirements = deduplicateRequirements(outputRequirements, keyPoints);
-
-  // Quality check: only structure if we have enough signal
-  const structureScore =
-    (task ? 1 : 0) +
-    (constraints.length > 0 ? 1 : 0) +
-    (keyPoints.length > 0 ? 1 : 0) +
-    (outputRequirements.length > 0 ? 1 : 0);
-
-  if (structureScore >= 2) {
-    optimized = buildStructuredPrompt(role, task, constraints, keyPoints, outputRequirements, cleaned);
-    changes.push('Converted unstructured input into structured prompt format');
-    if (!explicitRole && role) changes.push(`Inferred role: "${role}"`);
-    if (explicitRole) changes.push(`Extracted role: "${explicitRole}"`);
-    if (constraints.length > 0) changes.push(`Extracted ${constraints.length} constraint(s)`);
-    if (keyPoints.length > 0) changes.push(`Identified ${keyPoints.length} key point(s)`);
-    if (outputRequirements.length > 0) changes.push(`Identified ${outputRequirements.length} output requirement(s)`);
-  } else if (task) {
-    // Partial structure: at least format as task
-    optimized = role ? `Role: ${role}\n\nTask: ${task}` : `Task: ${task}`;
-    if (cleaned !== optimized) {
-      changes.push('Extracted core task from conversational text');
-      if (!explicitRole && role) changes.push(`Inferred role: "${role}"`);
-    } else {
-      optimized = cleaned;
-    }
-  } else {
-    optimized = cleaned;
-  }
-
-  } // end content path
-
-  const beforeTokens = estimateTokens(input);
-  let afterTokens = estimateTokens(optimized);
-
-  // Guard: if structured output is longer than input, fall back to cleaned text
-  // Skip for workflow prompts — their value is in restructuring, not compression
-  if (promptType !== 'workflow' && afterTokens > beforeTokens) {
-    optimized = cleaned;
-    afterTokens = estimateTokens(optimized);
-    // If even cleaned is longer (very short input), return original
-    if (afterTokens >= beforeTokens) {
-      return {
-        optimizedPrompt: input.trim(),
-        changes: ['Prompt is already concise — no optimizations needed'],
-        beforeTokens,
-        afterTokens: beforeTokens,
-        reduction: 0,
-      };
-    }
-  }
-
-  if (changes.length === 0) {
-    changes.push('Prompt is already well-structured — no optimizations needed');
-  }
-
-  const reduction = beforeTokens > 0
-    ? Math.round(((beforeTokens - afterTokens) / beforeTokens) * 100)
-    : 0;
-
-  if (reduction > 0 && changes.length > 1) {
-    changes.push(`Reduced tokens by ${reduction}% while improving clarity`);
-  }
-
-  return { optimizedPrompt: optimized, changes, beforeTokens, afterTokens, reduction };
-}
-
-// ─── AI Deep Optimize (optional, costs tokens) ───
-
-const SYSTEM_PROMPT = `You are an expert prompt engineer. Rewrite the user's prompt to be maximally effective and token-efficient.
-
-Rules:
-1. Output must use this structure (omit empty sections):
-   Role: ...
-   Task: ...
-   Constraints:
-   - ...
-   Key points:
-   - ...
-   Output requirements:
-   - ...
-2. Make every instruction direct and imperative
-3. Remove ALL conversational language
-4. Every token must earn its place
-5. Preserve original intent completely
-6. Infer the Role from the topic domain, not just the verb. "Write a guide about CI/CD" needs a DevOps engineer, not a content writer. Match the role to the subject matter expertise required.
-
-Return ONLY the optimized prompt. No explanations.`;
-
-export async function optimizeWithAI(prompt, apiKey) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.4,
-    }),
-  });
-
-  if (!res.ok) {
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `API error: ${res.status}`);
-  }
-
-  const data = await res.json();
-  const optimized = data.choices[0].message.content.trim();
-
-  const inputTokens = data.usage?.prompt_tokens || estimateTokens(SYSTEM_PROMPT + prompt);
-  const outputTokens = data.usage?.completion_tokens || estimateTokens(optimized);
-  const optimizationCost = estimateCost(inputTokens, outputTokens);
-
-  return { optimized, optimizationCost, inputTokens, outputTokens };
 }

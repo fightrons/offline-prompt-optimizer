@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { optimizeLocal, estimateTokens } from './optimizer.js';
+import { optimizeLocal, estimateTokens } from './optimizer/index.js';
 
 // Wait for tiktoken encoder to load
 beforeAll(async () => {

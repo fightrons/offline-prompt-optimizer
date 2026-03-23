@@ -654,7 +654,7 @@ Tests can be run manually via Node:
 
 ```bash
 node -e "
-import { optimizeLocal } from './src/optimizer.js';
+import { optimizeLocal } from './src/optimizer/index.js';
 await new Promise(r => setTimeout(r, 200)); // wait for tiktoken encoder
 
 const tests = [

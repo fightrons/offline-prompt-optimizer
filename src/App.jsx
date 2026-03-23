@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost } from './optimizer'
+import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost } from './optimizer/index.js'
 import { Settings, Copy, Check, Sparkles, Zap, AlertCircle, Bot, Key } from 'lucide-react'
 import './App.css'
 
@@ -18,7 +18,7 @@ function App() {
   const [error, setError] = useState('')
   const [apiKey, setApiKey] = useState(() => localStorage.getItem('openai_api_key') || '')
   const [showApiKey, setShowApiKey] = useState(false)
-  
+
   const [copiedInput, setCopiedInput] = useState(false)
   const [copiedOutput, setCopiedOutput] = useState(false)
 
@@ -101,7 +101,7 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <div className="title-group">
-          <h1>Prompt Optimizer</h1>
+          <h1>LeanPrompt <span style={{ fontSize: '0.55em', fontWeight: 'normal', color: '#a0aec0', WebkitTextFillColor: '#a0aec0' }}>| Prompt Optimizer</span></h1>
           <p>Local cleanup is free. AI optimization costs ~$0.001 &mdash; saves 10x downstream.</p>
         </div>
       </header>
@@ -146,7 +146,7 @@ function App() {
               <Key size={20} />
             </button>
           </div>
-          
+
           {showApiKey && (
             <div className="settings-panel">
               <label className="api-key-label">OpenAI API Key (Required for AI)</label>
@@ -177,19 +177,19 @@ function App() {
 
       {activeResult && (
         <div className="result-section">
-          
+
           <div className="stats-grid">
             <div className="stat-box">
               <span className="stat-label">Before</span>
-              <span className="stat-value">~{activeResult.beforeTokens} <small style={{fontSize: 14, color: 'var(--text-secondary)'}}>tok</small></span>
+              <span className="stat-value">~{activeResult.beforeTokens} <small style={{ fontSize: 14, color: 'var(--text-secondary)' }}>tok</small></span>
             </div>
             <div className="stat-box">
               <span className="stat-label">After</span>
-              <span className="stat-value highlight">~{activeResult.afterTokens} <small style={{fontSize: 14, color: 'var(--text-secondary)'}}>tok</small></span>
+              <span className="stat-value highlight">~{activeResult.afterTokens} <small style={{ fontSize: 14, color: 'var(--text-secondary)' }}>tok</small></span>
             </div>
             <div className="stat-box">
               <span className="stat-label">Reduction</span>
-              <span className="stat-value" style={{color: 'var(--brand-color)'}}>{activeResult.reduction}%</span>
+              <span className="stat-value" style={{ color: 'var(--brand-color)' }}>{activeResult.reduction}%</span>
             </div>
           </div>
 
@@ -199,10 +199,10 @@ function App() {
                 {isAI ? <Bot size={18} /> : <Zap size={18} />}
                 {isAI ? 'AI-Optimized Prompt' : 'Optimized Prompt'}
               </h3>
-              <button 
+              <button
                 onClick={handleCopyOutput}
                 style={{
-                  background: 'transparent', border: 'none', color: 'inherit', 
+                  background: 'transparent', border: 'none', color: 'inherit',
                   cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center'
                 }}
               >
@@ -229,10 +229,10 @@ function App() {
               <div className="cost-details">
                 This optimization cost <strong>{formatCost(activeResult.optimizationCost)}</strong> and saves <strong>{activeResult.beforeTokens - activeResult.afterTokens} tokens</strong> ({activeResult.reduction}%) per use.
               </div>
-              
+
               {activeResult.savingsPerUse > 0 && activeResult.breakEven !== Infinity ? (
                 <div className="roi-positive">
-                  <Check size={16} /> 
+                  <Check size={16} />
                   {activeResult.breakEven <= 1
                     ? `Pays for itself on the first reuse.`
                     : activeResult.breakEven <= 10
