@@ -8,14 +8,20 @@
  *   Layer 1: Cleanup          — strip soft language, normalize verbosity
  *   Layer 2: Intent Scoring   — weighted signal scoring across 5 intent types
  *   Layer 3: Domain Scoring   — weighted signal scoring across 13 domains
+ *   Layer 3.5: Type Classification — specification detection (early exit)
  *   Layer 4: Instruction Detection — confidence-based context/instruction split
  *   Layer 5: Extraction       — task, steps, constraints (instruction-priority)
  *   Layer 6: Role Mapping     — intent × domain → appropriate role
  *   Layer 7: Output Builder   — mode-specific structured formatting
  *
+ * Specification prompts (Objective + Requirements + Deliverables) take an
+ * early exit after Layer 3.5: their structure is preserved directly,
+ * skipping synthesis and step extraction entirely.
+ *
  * Design principles:
  *   - Signal scoring over hard rules (no if/else chains for classification)
  *   - Instruction-priority extraction (context never pollutes task detection)
+ *   - Structure preservation for specification prompts
  *   - Deterministic (no randomness, same input → same output)
  *   - No external libraries
  */
@@ -30,6 +36,8 @@ import {
 } from './extractors/instructions.js';
 import { mapRole } from './extractors/role.js';
 import { buildModeOutput } from './builder.js';
+import { classifyPromptType } from './classifier.js';
+import { buildSpecification } from './specBuilder.js';
 
 
 /**
@@ -66,6 +74,43 @@ export function interpret(rawText) {
 
   // ─── Layer 3: Domain Scoring ─────────────────────────────────────────
   const domainResult = scoreDomain(cleaned);
+
+  // ─── Layer 3.5: Type Classification ────────────────────────────────
+  // Detect specification prompts BEFORE extraction. Specifications have
+  // explicit section headers (Objective, Requirements, Deliverables) and
+  // must be preserved structurally — not decomposed into task/steps/constraints.
+  // Run against RAW text to preserve markdown headers that cleanup might strip.
+  const classification = classifyPromptType(rawText, intentResult.winner);
+
+  if (classification.isSpecification) {
+    // Early exit: specification path — preserve structure, skip synthesis
+    const role = mapRole(intentResult.winner, domainResult.winner);
+    const spec = buildSpecification(rawText, classification.positions, role);
+
+    return {
+      output: spec.output,
+      type: 'specification',
+      intent: intentResult.winner,
+      domain: domainResult.winner,
+      role: spec.role,
+      task: spec.objective,
+      steps: [],
+      constraints: spec.constraints,
+      hasInstructions: false,
+      contextUsed: false,
+      specification: {
+        objective: spec.objective,
+        requirements: spec.requirements,
+        deliverables: spec.deliverables,
+        constraints: spec.constraints,
+      },
+      scores: {
+        intent: intentResult.scores,
+        domain: domainResult.scores,
+        instructionConfidence: 0,
+      },
+    };
+  }
 
   // ─── Layer 4: Instruction Detection ──────────────────────────────────
   // Split on RAW text first — cleanup strips anchor phrases like "I want you to",

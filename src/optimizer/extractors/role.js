@@ -64,6 +64,9 @@ export function mapRole(intent, domain) {
     return 'Professional content writer';
   }
 
+  // Specification prompts use the underlying intent for role mapping,
+  // so they flow through the intent blocks above. No separate block needed.
+
   // Generic intent fallbacks
   if (domain === 'software') return 'Senior software engineer';
   if (domain === 'design') return 'UX/UI designer';
