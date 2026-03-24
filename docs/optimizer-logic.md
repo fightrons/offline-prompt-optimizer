@@ -14,39 +14,44 @@ User Input (messy, conversational)
          │
          ▼
 ┌─────────────────────────────────┐
-│  Layer 2: Intent Scoring        │  Weighted signals across 5 intents → highest score wins
+│  Layer 1.5: Instruction Split   │  Confidence-based context/instruction split
 └────────┬────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────┐
-│  Layer 3: Domain Scoring        │  Weighted signals across 13 domains → highest score wins
+│  Layer 2: Intent Scoring        │  Weighted signals across 5 intents
 └────────┬────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────┐
-│  Layer 3.5: Type Classification │  Specification detection (early exit if spec)
+│  Layer 3: Domain Scoring        │  Weighted signals across 13 domains
 └────────┬────────────────────────┘
          │
-         ├── Specification → preserve structure, skip extraction/synthesis
+         ▼
+┌─────────────────────────────────┐
+│  Layer 3.5: Type Classification │  Specification detection (early exit)
+└────────┬────────────────────────┘
+         │
+         ├── Specification → preserve structure
          │
          ▼ (non-spec only)
 ┌─────────────────────────────────┐
-│  Layer 4: Instruction Detection │  Confidence-based context/instruction split
+│  Layer 4: Extraction            │  Task, steps, constraints (instruction-priority)
 └────────┬────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────┐
-│  Layer 5: Extraction            │  Task, steps, constraints (instruction-priority)
+│  Layer 5: Synthesis Layer       │  Intent-aware objective + step normalization
 └────────┬────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────┐
-│  Layer 6: Role Mapping          │  intent × domain → role (5 intents × 13 domains)
+│  Layer 6: Role Mapping          │  Incorporate professional context
 └────────┬────────────────────────┘
          │
          ▼
 ┌─────────────────────────────────┐
-│  Layer 7: Mode-Based Builder    │  5 output formats matched to intent
+│  Layer 7: Mode-Based Builder    │  Structured formatting + Context preservation
 └────────┬────────────────────────┘
          │
          ▼
@@ -54,10 +59,10 @@ User Input (messy, conversational)
         │
         ├── Specification → Role / Objective / Requirements / Deliverables / Constraints
         ├── Content       → Role / Task / Constraints
-        ├── Workflow      → Role / Objective / Steps / Guidelines
+        ├── Workflow      → Role / Objective / Context / Steps / Guidelines
         ├── Analysis      → Role / Objective / Focus Areas / Constraints
         ├── Decision      → Role / Objective / Evaluation Criteria / Expected Output
-        └── Execution     → Role / Objective / Steps / Constraints
+        └── Execution     → Role / Objective / Context / Steps / Constraints
 ```
 
 ---
@@ -272,13 +277,13 @@ Requirements and constraints use bullet lists; deliverables use numbered lists. 
 
 ---
 
-## Layer 4: Instruction Detection
+## Layer 1.5: Instruction Detection (Prompt Splitting)
 
-Real-world prompts often contain large blocks of background context with instructions buried at the end. This layer separates them.
+Real-world prompts often contain large blocks of background context with instructions buried at the end. This layer separates them early in the pipeline.
 
 ### Context/Instruction Splitting
 
-**Critical design**: `splitPrompt()` runs on the **raw text** (before cleanup) to preserve instruction anchors like "I want you to" that `hardCleanup` would strip. Each portion is cleaned separately afterward.
+**Critical design**: `splitPrompt()` runs on the **raw text** (before Layer 1 cleanup) to preserve instruction anchors like "I want you to" that `hardCleanup` would otherwise strip.
 
 **Instruction anchors** (14 patterns):
 - "Now I want you to...", "Your task is...", "Follow these steps..."
@@ -506,14 +511,14 @@ Instead of extracting a raw sentence, `synthesizeObjective(instructions, intent)
 
 Maps messy real-world instructions to clean canonical steps via a prioritized pattern map:
 
-| Raw Pattern | Canonical Step |
-|---|---|
-| open/visit/navigate + page/site/portal | "Access the target platform" |
-| review/check + input/requirement/request | "Review input requirements" |
-| filter/select/pick + relevant/matching | "Filter for relevant items" |
-| write/draft/compose + cover letter/proposal | "Draft a targeted proposal" |
-| share/present + approval/review | "Share for approval" |
-| submit/send/deliver + final/approved | "Submit final output" |
+| Raw Pattern | Canonical Step | Notes |
+|---|---|---|
+| open/visit/navigate + page/site/portal | "Access the target platform" | Preserves URLs if present in the sentence |
+| review/check + input/requirement/request | "Review input requirements" | |
+| filter/select/pick + relevant/matching | "Filter for relevant items" | |
+| write/draft/compose + cover letter/proposal | "Draft a targeted proposal" | |
+| share/present + approval/review | "Share for approval" | |
+| submit/send/deliver + final/approved | "Submit final output" | |
 | analyze + data/trend/metric | "Analyze data for patterns and insights" |
 | prioritize/rank + impact/effort | "Prioritize by impact and feasibility" |
 

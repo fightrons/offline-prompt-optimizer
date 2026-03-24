@@ -237,60 +237,37 @@ Layer 7: Output Builder → formatted output
 
 ---
 
-## Phase 7: Specification Mode (v0.7 — Current)
+## Phase 7: Specification Mode (v0.7)
+
+**Commit**: `a3b8d1b`
 
 The system failed on specification-style prompts (system design docs, feature specs). These contain explicit sections like Objective, Requirements, and Deliverables — but the pipeline was decomposing them into task/steps/constraints, destroying the intended structure.
 
-### The problem
+### Key additions
 
-A specification prompt like:
+- **`detectSections(text)`**: Detects 5 section types via markdown headers and bold labels
+- **`classifyPromptType(text, intent)`**: Returns `"specification"` when Objective + Requirements + Deliverables all exist
+- **`buildSpecification(text, positions, role)`**: Extracts and preserves existing section structure
 
-```
-## Objective
-Convert extracted text into clean output.
+---
 
-## Requirements
-### 1. Objective Synthesis
-Implement synthesizeObjective()
+## Phase 8: Data Preservation & Pipeline Refinement (v0.8 — Current)
 
-## Deliverables
-1. Full implementation
-2. Inline comments
-```
-
-Would incorrectly map Deliverables → Steps and Requirements → Constraints.
+The optimizer was too aggressive in its abstractions, losing critical information like URLs and background context (services, platform-specific details). Additionally, the sentence-splitting logic was fragile.
 
 ### Key additions
 
-- **`detectSections(text)`** in `extractors/sections.js`: Detects 5 section types (objective, requirements, deliverables, steps, constraints) via markdown headers, bold labels, and bare labels
-- **`classifyPromptType(text, intent)`** in `classifier.js`: Returns `"specification"` when Objective + Requirements + Deliverables all exist; strict 3-of-3 gate to avoid false positives
-- **`buildSpecification(text, positions, role)`** in `specBuilder.js`: Extracts sections and lightly cleans them — does NOT synthesize, normalize, or rewrite
+- **URL Preservation**: `normalizeSteps()` now extracts and appends URLs to canonical phrasings (e.g., "Access the target platform: https://...")
+- **Context Preservation**: `execution` and `workflow` modes now include a `Context` block to ensure background data is not lost during extraction.
+- **Robust Sentence Splitting**: Updated regex `/(?<=[.!?])(?!\d)\s+|\n+/` to handle decimal points (`1.5 min read`) without prematurely terminating sentences.
+- **Pipeline Reordering**: `splitPrompt()` moved to **Layer 1.5** (before `hardCleanup`) to ensure instruction anchors like "I want you to" are detected before they are stripped.
 
 ### Architecture change
 
-Specification detection runs at **Layer 3.5** (after intent + domain scoring, before instruction detection). When triggered, it takes an early exit:
-
-```
-Layer 1: Cleanup
-  ↓
-Layer 2: Intent Scoring
-  ↓
-Layer 3: Domain Scoring
-  ↓
-Layer 3.5: Type Classification
-  ├── specification detected → buildSpecification() → early return
-  │   (skips synthesis, step extraction, instruction detection)
-  └── not specification → continue to Layer 4+
-```
-
-### What changed
-
-| Aspect | Before | After |
-|---|---|---|
-| Spec prompts | Forced through task/steps/constraints | Preserved as Objective/Requirements/Deliverables |
-| Deliverables | Incorrectly mapped to Steps | Kept as numbered deliverable list |
-| Requirements | Incorrectly mapped to Constraints | Kept as bullet requirement list |
-| Section headers | Stripped by cleanup | Detected before cleanup, preserved in output |
+The pipeline order was refactored to ensure data integrity:
+1. `splitPrompt()` on raw text
+2. `hardCleanup()` on context and instructions separately
+3. Intent/Domain classification on cleaned text
 
 ---
 
@@ -312,7 +289,7 @@ src/optimizer/
 └── extractors/
     ├── intent.js         → delegates to scoring.js scoreIntent()
     ├── domain.js         → delegates to scoring.js scoreDomain()
-    ├── role.js           Intent × Domain → Role mapping (6×13 matrix)
+    ├── role.js           Intent × Domain → Role mapping (5×13 matrix)
     ├── sections.js       Section detection for specification prompts (5 section types)
     ├── content.js        Sophisticated content extraction (~650 lines)
     ├── workflow.js       Workflow/analysis/decision extraction (~260 lines)
