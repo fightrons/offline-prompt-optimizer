@@ -24,6 +24,13 @@ User Input (messy, conversational)
          │
          ▼
 ┌─────────────────────────────────┐
+│  Layer 3.5: Type Classification │  Specification detection (early exit if spec)
+└────────┬────────────────────────┘
+         │
+         ├── Specification → preserve structure, skip extraction/synthesis
+         │
+         ▼ (non-spec only)
+┌─────────────────────────────────┐
 │  Layer 4: Instruction Detection │  Confidence-based context/instruction split
 └────────┬────────────────────────┘
          │
@@ -45,11 +52,12 @@ User Input (messy, conversational)
          ▼
   Structured Output
         │
-        ├── Content   → Role / Task / Constraints
-        ├── Workflow   → Role / Objective / Steps / Guidelines
-        ├── Analysis   → Role / Objective / Focus Areas / Constraints
-        ├── Decision   → Role / Objective / Evaluation Criteria / Expected Output
-        └── Execution  → Role / Objective / Steps / Constraints
+        ├── Specification → Role / Objective / Requirements / Deliverables / Constraints
+        ├── Content       → Role / Task / Constraints
+        ├── Workflow      → Role / Objective / Steps / Guidelines
+        ├── Analysis      → Role / Objective / Focus Areas / Constraints
+        ├── Decision      → Role / Objective / Evaluation Criteria / Expected Output
+        └── Execution     → Role / Objective / Steps / Constraints
 ```
 
 ---
@@ -204,6 +212,63 @@ URLs are stripped before scoring to avoid false positives from link text.
 | hr | hiring, recruit, talent, onboarding, employee, workforce, performance review, hr (4), human resources (4) |
 
 Fallback: `general` when all scores are 0.
+
+---
+
+## Layer 3.5: Type Classification
+
+After intent and domain scoring, the pipeline checks whether the prompt is a **specification** — a structured document with explicit section headers.
+
+### Why a separate type?
+
+Specification prompts (system design docs, feature specs, implementation briefs) declare their structure explicitly with headers like `## Objective`, `## Requirements`, `## Deliverables`. The normal pipeline would decompose these into task/steps/constraints, losing the author's intended structure. Specifications must be **preserved**, not synthesized.
+
+### Detection
+
+`classifyPromptType(text, intent)` runs `detectSections()` against the **raw text** (before cleanup, to preserve markdown headers). It checks for 5 section types:
+
+| Section | Header Patterns |
+|---|---|
+| objective | `## Objective`, `**Objective**:`, `Objective:` |
+| requirements | `## Requirements`, `**Requirements**:`, `Requirements:` |
+| deliverables | `## Deliverables`, `**Deliverables**:`, `Deliverables:` |
+| steps | `## Steps`, `**Steps**:`, `Steps:` |
+| constraints | `## Constraints`, `## Important`, `Constraints:` |
+
+### Classification Rule
+
+**All three** core sections must be present: Objective + Requirements + Deliverables → `"specification"`.
+
+Having only two of three is NOT enough — it could be a structured workflow or analysis prompt. This strict gate prevents false positives.
+
+### Early Exit
+
+When classified as specification, the pipeline takes an early exit:
+1. Role is mapped normally (intent × domain)
+2. Sections are extracted and lightly cleaned (not synthesized)
+3. Output preserves the spec structure: Role / Objective / Requirements / Deliverables / Constraints
+4. Layers 4–7 (instruction detection, extraction, synthesis, mode builder) are **skipped entirely**
+
+### Specification Output Format
+
+```
+Role: [role]
+
+Objective: [single statement from objective section]
+
+Requirements:
+- [requirement 1]
+- [requirement 2]
+
+Deliverables:
+1. [deliverable 1]
+2. [deliverable 2]
+
+Constraints:
+- [constraint 1]
+```
+
+Requirements and constraints use bullet lists; deliverables use numbered lists. Content is cleaned lightly (strip markdown headers, normalize whitespace) but NOT rewritten.
 
 ---
 
@@ -531,7 +596,9 @@ src/optimizer/
 ├── index.js              Main pipeline orchestrator (optimizeLocal)
 ├── scoring.js            Signal definitions + generic scoring engine
 ├── builder.js            Mode-based output builder (5 modes)
-├── engine.js             Standalone 7-layer interpretation pipeline
+├── engine.js             Standalone interpretation pipeline (with spec early exit)
+├── classifier.js         Prompt type classification (specification vs intent)
+├── specBuilder.js        Specification builder (structure-preserving)
 ├── synthesis.js          Controlled synthesis: objective, step normalization, constraint cleaning
 ├── utils.js              hardCleanup, compressClarity, fixCasing
 ├── tokens.js             Tiktoken + Anthropic token counting
@@ -541,15 +608,17 @@ src/optimizer/
     ├── intent.js         → delegates to scoring.js scoreIntent()
     ├── domain.js         → delegates to scoring.js scoreDomain()
     ├── role.js           Intent × Domain → Role mapping (5×13 matrix)
+    ├── sections.js       Section detection for specification prompts (5 section types)
     ├── content.js        Sophisticated content extraction (~650 lines)
     ├── workflow.js       Workflow/analysis/decision extraction (~260 lines)
     └── instructions.js   Context/instruction separation + instruction-priority extraction
 
 src/__tests__/
-├── optimizer.test.js     99 tests — full pipeline regression suite
-├── engine.test.js        54 tests — scoring, builder, engine, edge cases
-├── instructions.test.js  34 tests — instruction extraction layer
-└── synthesis.test.js     55 tests — synthesis layer (objective, steps, constraints)
+├── optimizer.test.js      99 tests — full pipeline regression suite
+├── engine.test.js         54 tests — scoring, builder, engine, edge cases
+├── instructions.test.js   34 tests — instruction extraction layer
+├── synthesis.test.js      55 tests — synthesis layer (objective, steps, constraints)
+└── specification.test.js  34 tests — specification detection, classification, builder, integration
 ```
 
-Total: **242 tests** across 4 test files.
+Total: **276 tests** across 5 test files.

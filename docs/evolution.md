@@ -207,7 +207,7 @@ Weights 1-4 follow a specificity principle:
 
 ---
 
-## Phase 6: Synthesis Layer (v0.6 — Current)
+## Phase 6: Synthesis Layer (v0.6)
 
 The synthesis layer was added between extraction and output building to solve a key limitation: raw extraction returns literal text from the prompt, but real-world instructions are noisy, numbered inconsistently, and need interpretation.
 
@@ -237,6 +237,63 @@ Layer 7: Output Builder → formatted output
 
 ---
 
+## Phase 7: Specification Mode (v0.7 — Current)
+
+The system failed on specification-style prompts (system design docs, feature specs). These contain explicit sections like Objective, Requirements, and Deliverables — but the pipeline was decomposing them into task/steps/constraints, destroying the intended structure.
+
+### The problem
+
+A specification prompt like:
+
+```
+## Objective
+Convert extracted text into clean output.
+
+## Requirements
+### 1. Objective Synthesis
+Implement synthesizeObjective()
+
+## Deliverables
+1. Full implementation
+2. Inline comments
+```
+
+Would incorrectly map Deliverables → Steps and Requirements → Constraints.
+
+### Key additions
+
+- **`detectSections(text)`** in `extractors/sections.js`: Detects 5 section types (objective, requirements, deliverables, steps, constraints) via markdown headers, bold labels, and bare labels
+- **`classifyPromptType(text, intent)`** in `classifier.js`: Returns `"specification"` when Objective + Requirements + Deliverables all exist; strict 3-of-3 gate to avoid false positives
+- **`buildSpecification(text, positions, role)`** in `specBuilder.js`: Extracts sections and lightly cleans them — does NOT synthesize, normalize, or rewrite
+
+### Architecture change
+
+Specification detection runs at **Layer 3.5** (after intent + domain scoring, before instruction detection). When triggered, it takes an early exit:
+
+```
+Layer 1: Cleanup
+  ↓
+Layer 2: Intent Scoring
+  ↓
+Layer 3: Domain Scoring
+  ↓
+Layer 3.5: Type Classification
+  ├── specification detected → buildSpecification() → early return
+  │   (skips synthesis, step extraction, instruction detection)
+  └── not specification → continue to Layer 4+
+```
+
+### What changed
+
+| Aspect | Before | After |
+|---|---|---|
+| Spec prompts | Forced through task/steps/constraints | Preserved as Objective/Requirements/Deliverables |
+| Deliverables | Incorrectly mapped to Steps | Kept as numbered deliverable list |
+| Requirements | Incorrectly mapped to Constraints | Kept as bullet requirement list |
+| Section headers | Stripped by cleanup | Detected before cleanup, preserved in output |
+
+---
+
 ## Module Map (Current)
 
 ```
@@ -244,7 +301,9 @@ src/optimizer/
 ├── index.js              Main pipeline orchestrator (optimizeLocal)
 ├── scoring.js            Signal definitions + generic scoring engine
 ├── builder.js            Mode-based output builder (5 modes)
-├── engine.js             Standalone 7-layer interpretation pipeline
+├── engine.js             Standalone interpretation pipeline (with spec early exit)
+├── classifier.js         Prompt type classification (specification vs intent)
+├── specBuilder.js        Specification builder (structure-preserving)
 ├── synthesis.js          Controlled synthesis: objective, step normalization, constraint cleaning
 ├── utils.js              hardCleanup, compressClarity, fixCasing
 ├── tokens.js             Tiktoken + Anthropic token counting
@@ -254,15 +313,17 @@ src/optimizer/
     ├── intent.js         → delegates to scoring.js scoreIntent()
     ├── domain.js         → delegates to scoring.js scoreDomain()
     ├── role.js           Intent × Domain → Role mapping (6×13 matrix)
+    ├── sections.js       Section detection for specification prompts (5 section types)
     ├── content.js        Sophisticated content extraction (~650 lines)
     ├── workflow.js       Workflow/analysis/decision extraction (~260 lines)
     └── instructions.js   Context/instruction separation + instruction-priority extraction
 
 src/__tests__/
-├── optimizer.test.js     99 tests — full pipeline regression suite
-├── engine.test.js        54 tests — scoring, builder, engine, edge cases
-├── instructions.test.js  34 tests — instruction extraction layer
-└── synthesis.test.js     55 tests — synthesis layer (objective, steps, constraints)
+├── optimizer.test.js      99 tests — full pipeline regression suite
+├── engine.test.js         54 tests — scoring, builder, engine, edge cases
+├── instructions.test.js   34 tests — instruction extraction layer
+├── synthesis.test.js      55 tests — synthesis layer (objective, steps, constraints)
+└── specification.test.js  34 tests — specification detection, classification, builder, integration
 ```
 
 ---
@@ -277,3 +338,4 @@ src/__tests__/
 | Phase 4 | 133 | + 34 instruction extraction tests + 2 intent-alignment tests |
 | Phase 5 | 187 | + 54 scoring/engine/builder tests + execution mode |
 | Phase 6 | 242 | + 55 synthesis tests (objective, step normalization, constraints) |
+| Phase 7 | 276 | + 34 specification tests (section detection, classification, builder, integration) |
