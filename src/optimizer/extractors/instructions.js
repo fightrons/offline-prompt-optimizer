@@ -120,7 +120,7 @@ export function extractTask(instructions, fallbackText) {
   if (!source.trim()) return null;
 
   const sentences = source
-    .split(/[.!?\n]+/)
+    .split(/(?<=[.!?])(?!\d)\s+|\n+/)
     .map(s => s.trim())
     .filter(s => s.length > 5);
 
@@ -267,7 +267,7 @@ export function extractConstraints(instructions) {
 
   const constraints = [];
   const sentences = instructions
-    .split(/[.!?\n]+/)
+    .split(/(?<=[.!?])(?!\d)\s+|\n+/)
     .map(s => s.trim())
     .filter(s => s.length > 5);
 

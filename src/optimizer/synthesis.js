@@ -187,7 +187,7 @@ export function extractActionSentences(text) {
 
   // Split on sentence boundaries and newlines
   const sentences = text
-    .split(/(?<=[.!?])\s+|\n+/)
+    .split(/(?<=[.!?])(?!\d)\s+|\n+/)
     .map(s => s.trim())
     .filter(s => s.length > 5);
 
@@ -356,9 +356,8 @@ export function synthesizeObjective(instructions, intent, extractedTask = null) 
 export function synthesizeConstraints(instructions) {
   if (!instructions || !instructions.trim()) return [];
 
-  // Split into sentences/lines
   const lines = instructions
-    .split(/[.!?\n]+/)
+    .split(/(?<=[.!?])(?!\d)\s+|\n+/)
     .map(s => s.trim())
     .filter(s => s.length > 5);
 

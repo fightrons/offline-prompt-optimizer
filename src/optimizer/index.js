@@ -5,8 +5,9 @@ import { extractRole, extractTask, extractConstraints, extractKeyPoints, extract
 import { detectIntent } from './extractors/intent.js';
 import { detectDomain } from './extractors/domain.js';
 import { mapRole } from './extractors/role.js';
-import { splitPrompt, extractTask as extractInstructionTask, extractSteps, extractConstraints as extractInstructionConstraints } from './extractors/instructions.js';
+import { splitPrompt, extractTask as extractInstructionTask } from './extractors/instructions.js';
 import { buildModeOutput } from './builder.js';
+import { synthesizeOutput } from './synthesis.js';
 
 // Pre-load encoder on import so it's ready by the time user clicks optimize
 getEncoder();
@@ -50,16 +51,21 @@ export function optimizeLocal(input) {
     const { instructions: execInstructions, hasInstructions } = splitPrompt(cleaned);
     const source = hasInstructions ? execInstructions : cleaned;
     const execRole = extractRole(input) || mapRole('execution', domain);
-    const execTask = extractInstructionTask(
+    const rawTask = extractInstructionTask(
       hasInstructions ? execInstructions : null,
       hasInstructions ? null : cleaned,
     );
-    const execSteps = extractSteps(source);
-    const execConstraints = extractInstructionConstraints(source);
+
+    // Use synthesis layer for cleaner objective, steps, and constraints
+    const { objective, steps: execSteps, constraints: execConstraints } = synthesizeOutput(
+      source,
+      'execution',
+      rawTask
+    );
 
     optimized = buildModeOutput('execution', {
       role: execRole,
-      task: execTask,
+      task: objective,
       steps: execSteps,
       constraints: execConstraints,
     });
