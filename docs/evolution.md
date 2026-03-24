@@ -467,6 +467,40 @@ The compiler approach gives better results for prompt optimization specifically 
 
 ---
 
+## Implementation Options for AI-Assist Layer
+
+### Approach options
+
+| Option | Description | Effort | Risk |
+|--------|-------------|--------|------|
+| **A. Extended heuristics only** | Strengthen scoring engine, add confidence thresholds — no AI model at all | Low | None |
+| **B. Micro-AI assist** | `@xenova/transformers` with tiny embedding model (~20MB) for tie-breaking and re-ranking | Medium | Low |
+| **C. In-browser LLM** | `web-llm` with a small model (0.6–1.7B) via WebGPU | High | High (browser compat, download size) |
+
+### Library options (for approaches B and C)
+
+| Library | What it does | Model size | Runtime |
+|---------|-------------|------------|---------|
+| `@xenova/transformers` | ONNX models in browser — embeddings, classification | ~5–20MB | WASM (all modern browsers) |
+| `web-llm` (mlc-ai) | Full LLM inference in browser | 400MB–2GB | WebGPU (Chrome/Edge only) |
+| `onnxruntime-web` | Lower-level ONNX runtime, more control | Varies | WASM/WebGPU |
+
+### Model options (for embeddings / classification)
+
+| Model | Size | Use case |
+|-------|------|----------|
+| `all-MiniLM-L6-v2` | ~20MB | Sentence similarity, re-ranking |
+| `distilbert-base-uncased` | ~65MB | Text classification |
+| `bge-micro-v2` | ~5MB | Ultra-light embeddings |
+
+### Recommended implementation path
+
+1. **Option A first** — costs nothing, no new dependencies. Strengthen confidence scoring in the existing signal engine and add explicit low-confidence detection thresholds.
+2. **Option B if needed** — when heuristic-only confidence gating hits a ceiling, integrate `@xenova/transformers` with `all-MiniLM-L6-v2` for intent disambiguation and sentence re-ranking.
+3. **Option C only if validated** — only pursue in-browser LLM if Options A and B prove insufficient for the target prompt types, and only after the validation plan (see "Future Considerations: Local LLM Optimization via WebGPU" above) confirms quality.
+
+---
+
 ## Test Coverage Evolution
 
 | Phase | Tests | What they cover |
