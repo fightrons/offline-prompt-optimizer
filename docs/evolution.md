@@ -305,6 +305,48 @@ src/__tests__/
 
 ---
 
+## Future Considerations: Local LLM Optimization via WebGPU
+
+### Motivation
+
+The current local optimizer is a heuristic pipeline — fast and deterministic, but fundamentally limited to pattern matching. An in-browser LLM could produce genuinely restructured prompts at GPT-level quality, completely free and offline-capable, with no API keys required.
+
+### Candidate: web-llm (mlc-ai/web-llm)
+
+[web-llm](https://github.com/mlc-ai/web-llm) runs quantized LLMs entirely in the browser via WebGPU. The API is OpenAI-compatible (`chat.completions.create`), which maps directly to our existing `ai.js` system prompt and message format. Models are downloaded once and cached in the browser — all subsequent inference is fully offline.
+
+### Model options (smallest to largest)
+
+| Model | Download Size | Notes |
+|-------|--------------|-------|
+| SmolLM2-360M-Instruct | ~200MB | Likely too weak for reliable instruction following |
+| Qwen3-0.6B | ~400MB | Better instruction following, reasonable starting point |
+| SmolLM2-1.7B-Instruct | ~1GB | Good balance — noticeably better at structured tasks |
+| Phi-3.5-mini (3.8B) | ~2.2GB | Excellent instruction following, but large download |
+
+**Recommendation**: Start with Qwen3-0.6B. If output quality is insufficient, step up to SmolLM2-1.7B.
+
+### Integration approach
+
+- Use `CreateWebWorkerMLCEngine` to run inference off the main thread (no UI blocking)
+- Reuse the existing system prompt from `ai.js`
+- Gate behind `navigator.gpu` check — fall back to heuristic optimizer when WebGPU is unavailable
+- Show a progress bar during first-time model download
+- Keep the heuristic pipeline as instant fallback (no WebGPU, first visit, unsupported browsers)
+
+### Open questions
+
+1. **Quality**: Can a 0.6–1.7B model reliably follow the structured output format (Role/Task/Constraints/etc.) without hallucinating sections or drifting?
+2. **UX**: Is a 200MB–1GB first-visit download acceptable for the target audience?
+3. **Browser support**: WebGPU requires Chrome/Edge 113+. No Firefox stable, limited Safari. Is this acceptable or does it narrow the audience too much?
+4. **Coexistence**: Should this replace the heuristic optimizer entirely, or exist as a third optimization tier ("Local AI")?
+
+### Validation plan
+
+Before committing to integration, run the existing system prompt through the candidate models on representative sample prompts and compare output quality against the heuristic pipeline results.
+
+---
+
 ## Test Coverage Evolution
 
 | Phase | Tests | What they cover |
