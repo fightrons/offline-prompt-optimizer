@@ -347,6 +347,126 @@ Before committing to integration, run the existing system prompt through the can
 
 ---
 
+## Strategic Direction: Pre-AI Reasoning Engine
+
+### The reframe
+
+The prompt optimizer is not a "prompt cleaner" — it is a **pre-AI reasoning engine**. Instead of relying on LLMs to optimize prompts, the system reduces token usage and improves prompt quality *before any model is even called*.
+
+This is a fundamentally different positioning from tools that use AI to fix AI inputs. The optimizer operates as a deterministic compiler: it parses intent, extracts structure, synthesizes instructions, and produces optimized output — all without spending a single token.
+
+### Three-tier optimization model
+
+| Mode | Behavior | Cost | Latency |
+|------|----------|------|---------|
+| **Local** (default) | 100% rule-based signal scoring + synthesis | Zero | Instant |
+| **Assisted** | Local pipeline + lightweight micro-AI refinement (tiny in-browser models for sentence scoring, keyword importance, classification edge cases) | Zero | Near-instant |
+| **Deep** | Local pipeline + optional API call for cases where heuristics lack confidence | Token cost | Variable |
+
+The local tier is the core product. Assisted and Deep are optional escalation paths, not replacements.
+
+### Micro-AI layer (Assisted mode)
+
+Rather than loading a general-purpose LLM in the browser, the Assisted tier uses tiny, task-specific models for narrow refinements:
+
+- **Sentence scoring**: Rank extracted sentences by relevance (tiny embedding model, ~5–20MB)
+- **Keyword importance**: Weight domain-specific terms beyond what static signal maps capture
+- **Classification refinement**: Break ties or low-confidence intent/domain scores
+
+Candidate library: `@xenova/transformers` (runs ONNX models in browser via WebAssembly/WebGPU). These are not general LLMs — they are small, focused models for specific subtasks.
+
+### Why this matters
+
+The heuristic pipeline already handles the majority of prompt optimization without any AI involvement. The strategic edge is:
+
+1. **Zero cost** — no API keys, no token spend for the default path
+2. **Zero latency** — deterministic compilation, not inference
+3. **Predictable** — same input always produces same output
+4. **AI-optional** — escalate to models only when heuristic confidence is low
+
+The local LLM exploration (web-llm / WebGPU) remains a valid option for a future "Local AI" tier, but it sits alongside the reasoning engine — it does not replace it.
+
+---
+
+## Design Philosophy: AI-Assisted Compiler, Not a Small LLM
+
+### Core principle
+
+The goal is **not** to build a small LLM that understands everything. The goal is to build a **specialized AI-assisted compiler for prompts** — where deterministic rules do 80% of the work and tiny AI models handle the 20% of edge cases where rules struggle.
+
+Instead of replacing logic with AI, use AI only where deterministic systems fail.
+
+### Where AI should intervene
+
+AI assists should be narrow and targeted — plugged into specific decision points, not spread across the pipeline.
+
+**1. Intent disambiguation**
+
+When signal scores are close (e.g., `analysis: 3` vs `decision: 3`), the rule engine cannot confidently pick a winner. A tiny classifier or embedding similarity check breaks the tie.
+
+**2. Objective selection**
+
+Instead of picking the first action sentence or a heuristic best-guess, a small re-ranker scores candidate objective sentences and selects the strongest one.
+
+**3. Noise filtering**
+
+Detecting filler and redundant phrases that fall outside the static pattern lists — cases where regex misses but a lightweight model catches.
+
+### Where AI should NOT intervene
+
+The rule engine is already stronger than a small model for:
+
+- **Step generation** — deterministic extraction from numbered/ordinal/bullet patterns
+- **Structure building** — mode-based output assembly (Role/Task/Constraints/etc.)
+- **Role mapping** — the intent × domain matrix is explicit and debuggable
+
+Replacing these with inference would make the system slower, less predictable, and harder to debug — with no quality gain.
+
+### Confidence-gated architecture
+
+```
+Input Prompt
+  ↓
+Cleanup (deterministic)
+  ↓
+Rule Engine (intent + domain + extraction)
+  ↓
+Confidence Check
+  ├── HIGH → proceed directly to synthesis
+  └── LOW  → AI assist (classify / rank / filter)
+  ↓
+Synthesis Layer (deterministic)
+  ↓
+Optimized Output
+```
+
+The AI layer is a fallback path, not the main path. Most prompts never touch it.
+
+### Practical implementation
+
+| Component | Approach | Size |
+|-----------|----------|------|
+| Intent/domain tie-breaking | Embedding similarity (`all-MiniLM-L6-v2` via `@xenova/transformers`) | ~20MB |
+| Sentence re-ranking | Same embedding model, cosine similarity against intent prototype | ~0MB (reuses above) |
+| Noise detection | Lightweight classifier or extended heuristic rules | ~0–5MB |
+
+Total additional footprint: **~20MB** — loaded lazily, only when confidence is low.
+
+### Why this beats a small LLM
+
+| | Small LLM (0.6–1.7B) | AI-assisted compiler |
+|---|---|---|
+| Download size | 400MB–1GB | ~20MB (lazy) |
+| Inference speed | Seconds (even with WebGPU) | Milliseconds |
+| Predictability | Non-deterministic | Deterministic core, AI only at edges |
+| Debuggability | Black box | Full score transparency |
+| Browser support | WebGPU only (Chrome/Edge) | WASM (all modern browsers) |
+| Offline capable | Yes (after download) | Yes (after download) |
+
+The compiler approach gives better results for prompt optimization specifically because the problem is well-structured — it's not open-ended generation, it's classification + extraction + assembly.
+
+---
+
 ## Test Coverage Evolution
 
 | Phase | Tests | What they cover |
