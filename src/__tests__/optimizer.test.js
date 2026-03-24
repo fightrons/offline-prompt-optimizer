@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { optimizeLocal, estimateTokens } from './optimizer/index.js';
+import { optimizeLocal, estimateTokens } from '../optimizer/index.js';
 
 // Wait for tiktoken encoder to load
 beforeAll(async () => {
@@ -38,8 +38,8 @@ describe('Test 1: Healthcare AI Blog', () => {
     expect(result.reduction).toBeGreaterThanOrEqual(67);
   });
 
-  it('should infer role as Professional content writer', () => {
-    expect(result.optimizedPrompt).toContain('Role: Professional content writer');
+  it('should infer role as Medical Content Writer (healthcare domain detected)', () => {
+    expect(result.optimizedPrompt).toContain('Role: Medical Content Writer');
   });
 
   it('should extract task about AI in healthcare', () => {
@@ -625,8 +625,8 @@ describe('Test 9: Financial Insights Workflow — Role-Intent Alignment', () => 
     expect(result.optimizedPrompt).not.toMatch(/^Constraints:/m);
   });
 
-  it('should infer role as Financial analyst, NOT Content research specialist', () => {
-    expect(result.optimizedPrompt).toContain('Role: Financial analyst');
+  it('should infer role as Financial Operations Specialist, NOT Content research specialist', () => {
+    expect(result.optimizedPrompt).toContain('Role: Financial Operations Specialist');
     expect(result.optimizedPrompt).not.toMatch(/Content research specialist/i);
   });
 
@@ -660,8 +660,8 @@ describe('Test 9: Financial Insights Workflow — Role-Intent Alignment', () => 
     expect(result.optimizedPrompt).toMatch(/Column G/);
   });
 
-  it('should extract topics/categories into Analysis Focus', () => {
-    expect(result.optimizedPrompt).toMatch(/Analysis Focus:/m);
+  it('should extract topics/categories into Topics section', () => {
+    expect(result.optimizedPrompt).toMatch(/Topics:/m);
     // Should capture cost optimization, revenue trends, etc.
     expect(result.optimizedPrompt).toMatch(/cost optimization/i);
     expect(result.optimizedPrompt).toMatch(/pricing strateg/i);
@@ -692,8 +692,8 @@ describe('Test 9: Financial Insights Workflow — Role-Intent Alignment', () => 
     expect(result.optimizedPrompt).not.toMatch(/Tone:/i);
   });
 
-  it('should report analysis detection in changes', () => {
-    expect(result.changes.some(c => /analysis/i.test(c))).toBe(true);
+  it('should report workflow detection in changes', () => {
+    expect(result.changes.some(c => /workflow/i.test(c))).toBe(true);
   });
 
   it('should restructure effectively (no excessive expansion)', () => {

@@ -5,6 +5,8 @@ import { extractRole, extractTask, extractConstraints, extractKeyPoints, extract
 import { detectIntent } from './extractors/intent.js';
 import { detectDomain } from './extractors/domain.js';
 import { mapRole } from './extractors/role.js';
+import { splitPrompt, extractTask as extractInstructionTask, extractSteps, extractConstraints as extractInstructionConstraints } from './extractors/instructions.js';
+import { buildModeOutput } from './builder.js';
 
 // Pre-load encoder on import so it's ready by the time user clicks optimize
 getEncoder();
@@ -43,6 +45,29 @@ export function optimizeLocal(input) {
     if (Object.keys(components.dataSources).length > 0) changes.push(`Extracted ${Object.keys(components.dataSources).length} data source(s)`);
     if (components.steps.length > 0) changes.push(`Extracted ${components.steps.length} task(s)`);
     if (components.outputFormat.length > 0) changes.push(`Extracted ${components.outputFormat.length} output format(s)`);
+  } else if (intent === 'execution') {
+    // ─── Execution Path: instruction-priority extraction ───
+    const { instructions: execInstructions, hasInstructions } = splitPrompt(cleaned);
+    const source = hasInstructions ? execInstructions : cleaned;
+    const execRole = extractRole(input) || mapRole('execution', domain);
+    const execTask = extractInstructionTask(
+      hasInstructions ? execInstructions : null,
+      hasInstructions ? null : cleaned,
+    );
+    const execSteps = extractSteps(source);
+    const execConstraints = extractInstructionConstraints(source);
+
+    optimized = buildModeOutput('execution', {
+      role: execRole,
+      task: execTask,
+      steps: execSteps,
+      constraints: execConstraints,
+    });
+
+    changes.push('Detected execution prompt — used structured execution format');
+    if (execRole) changes.push(`Inferred role: "${execRole}"`);
+    if (execSteps.length > 0) changes.push(`Extracted ${execSteps.length} step(s)`);
+    if (execConstraints.length > 0) changes.push(`Extracted ${execConstraints.length} constraint(s)`);
   } else {
 
     // ─── Content Path: original extraction pipeline ───
@@ -105,7 +130,7 @@ export function optimizeLocal(input) {
 
   // Guard: if structured output is longer than input, fall back to cleaned text
   // Skip for workflow/analysis/decision prompts — their value is in restructuring, not compression
-  if (intent !== 'workflow' && intent !== 'analysis' && intent !== 'decision' && afterTokens > beforeTokens) {
+  if (intent !== 'workflow' && intent !== 'analysis' && intent !== 'decision' && intent !== 'execution' && afterTokens > beforeTokens) {
     optimized = cleaned;
     afterTokens = estimateTokens(optimized);
     // If even cleaned is longer (very short input), return original

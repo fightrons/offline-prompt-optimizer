@@ -1,6 +1,6 @@
 # Optimizer Logic — How the Local Engine Works
 
-The local optimizer transforms unstructured, conversational prompts into structured, token-efficient prompts using a 3-layer pipeline. No API calls, no ML models — pure pattern matching and rule-based transformation.
+The local optimizer transforms unstructured, conversational prompts into structured, token-efficient prompts using a **7-layer signal-based pipeline**. No API calls, no ML models — weighted pattern matching and rule-based transformation.
 
 ## Architecture Overview
 
@@ -8,26 +8,51 @@ The local optimizer transforms unstructured, conversational prompts into structu
 User Input (messy, conversational)
         │
         ▼
-┌─────────────────────┐
-│  Layer 1: Cleanup   │  Remove noise, normalize language
-└────────┬────────────┘
+┌─────────────────────────────────┐
+│  Layer 1: Hard Cleanup          │  Strip noise, normalize verbosity
+└────────┬────────────────────────┘
          │
          ▼
-┌─────────────────────┐
-│  Layer 2: Extract   │  Detect role, task, constraints, key points, output requirements
-└────────┬────────────┘
+┌─────────────────────────────────┐
+│  Layer 2: Intent Scoring        │  Weighted signals across 5 intents → highest score wins
+└────────┬────────────────────────┘
          │
          ▼
-┌─────────────────────┐
-│  Layer 3: Build     │  Assemble structured prompt from extracted components
-└────────┬────────────┘
+┌─────────────────────────────────┐
+│  Layer 3: Domain Scoring        │  Weighted signals across 13 domains → highest score wins
+└────────┬────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Layer 4: Instruction Detection │  Confidence-based context/instruction split
+└────────┬────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Layer 5: Extraction            │  Task, steps, constraints (instruction-priority)
+└────────┬────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Layer 6: Role Mapping          │  intent × domain → role (5 intents × 13 domains)
+└────────┬────────────────────────┘
+         │
+         ▼
+┌─────────────────────────────────┐
+│  Layer 7: Mode-Based Builder    │  5 output formats matched to intent
+└────────┬────────────────────────┘
          │
          ▼
   Structured Output
         │
-        ├── Content path → Role / Task / Constraints / Key Points / Output
-        └── Workflow path → Role / Objective / Context / Topics / Data Sources / Steps / Output Format / Tools / Guidelines
+        ├── Content   → Role / Task / Constraints
+        ├── Workflow   → Role / Objective / Steps / Guidelines
+        ├── Analysis   → Role / Objective / Focus Areas / Constraints
+        ├── Decision   → Role / Objective / Evaluation Criteria / Expected Output
+        └── Execution  → Role / Objective / Steps / Constraints
 ```
+
+---
 
 ## Layer 1: Hard Cleanup
 
@@ -94,198 +119,314 @@ After all regex runs, the text is cleaned:
 - Double commas → single comma
 - Spaces before punctuation → removed
 
-## Layer 2: Extract Structured Components
+---
 
-Runs against both the original input and the cleaned text, depending on what's being extracted. Constraints use the original (to catch tone/length before they're stripped). Task and key points use the cleaned text (to avoid matching noise).
+## Layer 2: Intent Scoring
 
-### 2a. Role Extraction
+Replaces the old if/else detection chain with **weighted signal scoring**. All 5 intent categories are scored simultaneously against the text; the highest score wins.
 
-**Explicit role** — regex matches phrases like "you are a [role]", "act as a [role]". Only matches if the captured text ends with a known role noun (writer, engineer, developer, analyst, etc.) to avoid false positives like "you are about to..." capturing garbage.
+### Signal Weight Scale (1–4)
 
-**Inferred role** — if no explicit role is found, the task text is matched against keyword→role mappings:
+| Weight | Meaning | Examples |
+|---|---|---|
+| 1 | Ambiguous — appears across contexts | "create", "pipeline", "summarize" |
+| 2 | Moderate — relevant but not definitive | "guide", "scrape", "trend", "generate" |
+| 3 | Strong — clear category indicator | "write", "blog", "analyze", "prioritize", "send" |
+| 4 | Definitive — multi-word, category-unique | "impact vs effort", "evaluate options", "strategic plan" |
 
-| Task Keywords | Inferred Role |
+### Intent Signal Categories
+
+**Content** (writing/creation):
+- Weight 3: write, draft, compose, blog, article, essay
+- Weight 2: guide, tutorial, how-to guide, generate, produce, post, copy, headline
+- Weight 1: create, summarize, explain, describe
+
+**Workflow** (multi-step processes):
+- Weight 3: spreadsheet, excel sheet, google sheet, column [a-z], rss, xml feed
+- Weight 2: step N, scrape, fetch, crawl, update rows, daily basis, weekly task, recurring, automate
+- Weight 1: pipeline
+
+**Analysis** (data analysis/insight):
+- Weight 3: analyze, analyzing, insights, data analysis, statistical
+- Weight 2: trends, correlation, regression, findings
+- Weight 1: patterns
+
+**Decision** (strategic evaluation):
+- Weight 4: impact...effort, evaluate options, strategic plan, what to build next
+- Weight 3: prioritize, prioritization, roadmap, trade-offs
+
+**Execution** (action-oriented):
+- Weight 3: send, dispatch, submit, proposals, outreach
+- Weight 2: apply, applying, deliver, distribute, forward, escalate
+
+### Tiebreaking
+
+When two intents tie, explicit priority ordering decides:
+```
+decision (5) > workflow (4) > analysis (3) > execution (2) > content (1)
+```
+
+### Why Signal Scoring Matters
+
+The old system suffered from **priority shadowing**: a single keyword could override the correct classification.
+
+Example: *"Write a detailed blog post analyzing market trends in healthcare"*
+- **Old system**: "analyze" triggers analysis intent → wrong output format
+- **New system**: content (write=3, blog=3, post=2 = 8) > analysis (analyzing=3, trends=2 = 5) → content wins correctly
+
+Example: *"Set up a daily pipeline that scrapes RSS feeds and updates a Google Sheet with financial insights"*
+- **Old system**: "insights" triggers analysis → loses workflow structure
+- **New system**: workflow (pipeline=1, scrape=2, rss=3, google sheet=3, daily=2 = 11) > analysis (insights=3 = 3) → workflow wins correctly
+
+---
+
+## Layer 3: Domain Scoring
+
+Uses the same signal-scoring approach as intent. Scores text against 13 domain categories simultaneously.
+
+URLs are stripped before scoring to avoid false positives from link text.
+
+### Supported Domains
+
+| Domain | Key Signals (weight 3+) |
 |---|---|
-| blog, article, write, content | Professional content writer |
-| code, debug, refactor, API, bug | Senior software engineer |
-| explain, teach, tutorial | Technical educator |
-| analyze, data, report, metrics | Data analyst |
-| design, UI, UX, wireframe | UX/UI designer |
-| market, brand, campaign, SEO | Marketing strategist |
-| email, letter, message | Professional communicator |
-| plan, strategy, roadmap | Strategic planner |
-| translate, localize | Professional translator |
-| summarize, summary, overview | Research analyst |
-| *(fallback)* | Domain expert |
+| product | product manager, PM role (4), feature request, backlog, user stories, stakeholder, MVP |
+| frontend | react, vue, angular, svelte, css, html, tailwind, frontend |
+| backend | node, express, django, flask, fastapi, graphql, rest api, backend |
+| devops | docker, kubernetes, k8s, ci/cd, jenkins, github actions, devops |
+| finance | revenue, profit, margin, financial, fiscal, quarterly, roi, p&l, balance sheet |
+| qa | qa, quality assurance, unit test, integration test, e2e |
+| software | system design, refactor |
+| design | figma, sketch, wireframe, prototype, user experience, ux |
+| education | student, curriculum, education |
+| marketing | seo, sem, funnel, leads, conversion |
+| healthcare | patient, diagnosis, treatment, healthcare, medical, clinical |
+| hr | hiring, recruit, talent, onboarding, employee, workforce, performance review, hr (4), human resources (4) |
 
-**Workflow-specific role inference** — when a prompt is detected as a workflow (see Workflow Detection below), role inference uses a separate priority chain:
+Fallback: `general` when all scores are 0.
 
-| Workflow Keywords | Inferred Role |
+---
+
+## Layer 4: Instruction Detection
+
+Real-world prompts often contain large blocks of background context with instructions buried at the end. This layer separates them.
+
+### Context/Instruction Splitting
+
+**Critical design**: `splitPrompt()` runs on the **raw text** (before cleanup) to preserve instruction anchors like "I want you to" that `hardCleanup` would strip. Each portion is cleaned separately afterward.
+
+**Instruction anchors** (14 patterns):
+- "Now I want you to...", "Your task is...", "Follow these steps..."
+- "Do the following...", "You need to...", "I need you to..."
+- "Instructions:", "Task:", "Requirements:"
+
+When an anchor is found, the text is split into:
+- **Context** — everything before the earliest anchor
+- **Instructions** — everything from the anchor onward
+
+When no anchor is found, the entire text is treated as context (fallback mode).
+
+### Instruction Confidence Score
+
+A parallel scoring pass computes a confidence value (0–1) indicating how instruction-heavy the prompt is overall:
+
+- **Strong signals** (weight 5): instruction anchors
+- **Moderate signals** (weight 3–4): numbered steps, "you need to", "task:", "requirements:"
+- **Weak signals** (weight 1–2): constraint phrases (must, avoid, should), imperative verbs at line start
+
+Threshold: 0.12 (normalized score = raw / max possible). Max possible (~56) is never fully achievable since signals are mutually exclusive in practice.
+
+---
+
+## Layer 5: Mode-Specific Extraction
+
+When instructions exist, extraction happens **only from the instruction block**. Context cannot pollute task detection — this is the core principle.
+
+### Task Extraction
+
+Uses a scoring system to pick the best sentence from the instruction block:
+
+| Signal | Score Modifier |
 |---|---|
-| financial/cost/revenue/pricing + insight/decision/actionable | Financial analyst |
-| research, RSS, scrape, content pipeline, daily research | Content research specialist |
-| automate, workflow, pipeline, ETL, data entry | Workflow automation specialist |
-| *(fallback)* | Domain expert |
+| Contains instruction anchor phrase | +20 |
+| Positional bonus (earlier = better) | +5 minus sentence index |
+| Contains action verb (send, create, analyze...) | +3 |
+| Is a numbered step (1., 2.) | -15 |
+| Contains context-like phrases ("for example", "case study") | -5 to -8 |
 
-**Role-intent alignment**: The financial analyst detection is critical — prompts about financial insights and decision-making should get an analytical role, not a content-gathering role, even when RSS feeds and research patterns are present. The intent (analysis vs. gathering) determines the role.
+Instruction anchor prefixes ("Your task is to", "I want you to") are stripped from the final task.
 
-### 2b. Task Extraction
+When no instruction block exists, task extraction falls back to the full text.
 
-Three regex pattern groups scan for action verbs, each covering a different verb family:
+### Step Extraction
 
-1. **Creation**: write, create, build, generate, design, develop, draft, compose, produce, prepare
-2. **Analysis**: explain, describe, summarize, analyze, review, compare, evaluate, list, outline
-3. **Transformation**: translate, convert, transform, rewrite, edit, fix, debug, refactor, optimize
+Detects four step formats:
+1. **Numbered with dot**: `1. Open the file`
+2. **Numbered with paren**: `1) Filter the data`
+3. **Step N: format**: `Step 1: Collect data` (uses lookahead to handle single-line lists)
+4. **Ordinal**: `First, review...`, `Second, highlight...`, `Finally, submit...`
 
-**Earliest match wins.** All three pattern groups are tested, and the match with the lowest index in the text is selected. This prevents later verbs from shadowing earlier, more relevant ones (e.g., "debug" appearing before "explain").
+Inline numbered items are also handled via regex: `1. do A 2. do B 3. do C` on a single line.
 
-**Object cleanup:** The captured object after the verb is aggressively trimmed — trailing conjunctions, noise phrases, and subordinate clauses are stripped.
+### Constraint Extraction
 
-**Topic enrichment:** After extracting the core verb+object, the full text is scanned for an "about/on/regarding" clause. If found and not already present in the task, it's appended (e.g., "Write a blog post" + "about AI in healthcare" → "Write a blog post on AI in healthcare").
+Matches constraint-signaling phrases from the instruction block only:
+- **Prohibitions**: do not, don't, avoid, never, exclude
+- **Requirements**: must, should, ensure, only, limit, stick to, within
+- **Boundaries**: keep [X] under/below/within
 
-**Fallback:** If no verb pattern matches, the first meaningful sentence (>10 chars) is used as the task.
+---
 
-### 2c. Constraint Extraction
+## Layer 6: Role Mapping
 
-Runs against the **original input** to catch signals before cleanup strips them.
+Maps `intent × domain` to a professional role using a 2D lookup.
 
-**Tone detection:**
-- Scans for tone words: professional, casual, formal, friendly, simple, academic, conversational, humorous, serious, persuasive, informative
-- **Negated tones are excluded**: "not too technical" does NOT add "Technical"
-- **Compound tones**: multiple detected tones are joined with "and"
-- **Accessibility signals**: patterns like "not too technical", "easy to understand", "non-technical", "simple language" trigger an "accessible (non-technical audience)" suffix
+### Engineering Domain Overrides
 
-**Length detection:**
-- **Range**: "800 to 1000 words" → "800–1000 words" (uses en-dash)
-- **Approximate**: "around 500 words" → "~500 words"
-- **Maximum**: "under 200 words" → "~200 words"
+Three domains always override intent because they are highly specialized:
+- `devops` → "DevOps engineer"
+- `frontend` → "Frontend developer"
+- `backend` → "Backend engineer"
 
-**Language and audience** are also extracted via pattern matching if present.
+### Intent × Domain Matrix (excerpt)
 
-### 2d. Intent-Aware Extraction (Preventing Pattern Leakage)
+| Domain | Content | Workflow | Analysis | Decision | Execution |
+|---|---|---|---|---|---|
+| product | Content writer | Workflow automation | Product Manager | Product Manager | Product Ops Manager |
+| finance | Content writer | Financial Ops Specialist | Financial analyst | Financial Controller | Financial Ops Analyst |
+| marketing | Content writer | Content research specialist | Marketing analyst | Marketing strategist | Business Dev Specialist |
+| software | Senior SW engineer | Senior SW engineer | Senior SW engineer | Engineering Manager | Software Engineer |
+| healthcare | Medical Content Writer | Clinical Workflow Specialist | Healthcare Data Analyst | Healthcare Ops Director | Healthcare Ops Coordinator |
+| hr | Content writer | HR Ops Specialist | Talent Analyst | HR Director | HR Ops Specialist |
+| general | Content writer | Workflow automation | Data analyst | Strategic planner | Operations Specialist |
 
-A critical part of Layer 2 is avoiding "context-blind keyword triggering." The system evaluates the underlying intent of the prompt (e.g., *building* a product vs. *evaluating* a product roadmap) to prevent inappropriate constraints from leaking in.
+Generic intent (no clear signal) falls back to domain-based roles: software → Senior SW engineer, design → UX/UI designer, etc. Final fallback: "Domain expert".
 
-- **Builder intent vs Decision intent**: If words like "product", "MVP", or "features" appear, the system previously assumed a developer mindset. It now requires explicit building/creating intent to inject constraints like "Define validation strategy" or tech stacks. If the prompt is about prioritization (e.g., "prioritize features," "impact vs effort"), it suppresses builder constraints.
-- **Analytical data vs Formatting data**: Keywords like "data" or "metrics" only trigger "Include relevant statistics" if the prompt explicitly asks to *show* or *present* stats, avoiding injections on purely analytical tasks.
-- **Relational vs Comparative**: The word "vs" only triggers a "pros and cons" comparison if the prompt is asking to compare approaches, not if it's describing relational formulas (like "impact vs effort").
+---
 
-### 2e. Key Point Extraction
+## Layer 7: Mode-Based Output Builder
 
-Two-phase approach:
+Each intent maps to a dedicated output format with mode-appropriate section labels.
 
-**Phase 1 — Content pattern matching.** Scans sentences for phrases like "about X", "benefits of X", "cover X". Extracted points are:
-- Trimmed of trailing conjunctions
-- Run through clarity compression ("because it provides flexibility" → "Flexibility as a key driver")
-- Filtered: must be 2+ words, 6–150 chars, no duplicates
+### Content Mode
+```
+Role: [role]
 
-**Phase 2 — Semantic signal detection.** Scans the full text for topic-level signals regardless of sentence structure:
+Task: [task]
 
-| Signal | Key Point Generated |
-|---|---|
-| challenges, risks, concerns, limitations | "Challenges and risks" (with e.g. if concrete example found nearby) |
-| real-world examples, practical applications | "Real-world examples and applications" |
-| how [someone] is using/leveraging | "Real-world examples and applications" |
-| statistics, stats, data, figures | "Include relevant statistics" |
-| conclusion, summary, wrap up | "Provide a clear conclusion" |
+Constraints:
+- [constraint 1]
+- [constraint 2]
+```
 
-**Challenge example extraction**: When challenges/risks are detected, the system searches for concrete examples in nearby text (same sentence or next sentence). It tries three patterns in order:
-1. Same-sentence "like/such as [X]"
-2. Cross-sentence "like/such as [X]"
-3. Direct keyword match (data privacy, bias, security, etc.)
+### Workflow Mode
+```
+Role: [role]
 
-Each candidate is validated — noise words ("perfect", "anything", "something") cause the candidate to be skipped, and the loop continues to the next pattern.
+Objective: [task]
 
-**Deduplication**: After both phases, content-pattern entries that overlap with semantic entries are removed. Overlap is measured by word intersection ratio (>= 40% overlap = duplicate). Semantic entries always take priority.
+Steps:
+1. [step 1]
+2. [step 2]
 
-### 2e. Output Requirement Extraction
+Guidelines:
+- [constraint 1]
+```
 
-Detects formatting and structural requirements:
+### Analysis Mode
+```
+Role: [role]
 
-- **Format patterns**: bullet points, numbered lists, JSON, Markdown, tables, code examples
-- **Content inclusions**: "include statistics/examples/references/diagrams" etc.
-- **Specific list requests**: "list of tips for [X]", "steps to [Y]"
-- **Structure detection**: "headings", "sections", "easy to read", "structured article" → "Structured article with headings and sections"
+Objective: [task]
 
-## Workflow Detection
+Focus areas:
+- [step/topic 1]
+- [step/topic 2]
 
-Before Layer 3, the engine determines whether the prompt is a **workflow** or **content** prompt. This gates which build path is used.
+Constraints:
+- [constraint 1]
+```
 
-### Detection Signals
+### Decision Mode
+```
+Role: [role]
 
-The engine checks for 10 signal patterns:
+Objective: [task]
 
-| Signal | Pattern |
-|---|---|
-| Numbered steps | "Step 1", "Step 2" |
-| Column definitions | "Column A", "Column B" |
-| RSS feeds | "RSS feed" |
-| Google tools | "Google Sheet", "Google Alert", "Google Doc" |
-| Spreadsheets | "spreadsheet", "excel sheet" |
-| Data collection | "scrape", "fetch", "crawl" |
-| Data entry | "update rows" |
-| Recurring tasks | "daily basis", "weekly task", "recurring research" |
-| RSS URLs | URLs containing rss/feed/xml |
-| Feed URLs | domain.com/rss or domain.com/feed patterns |
+Evaluation criteria:
+- [criteria from constraints + evaluation-style steps]
 
-**Trigger**: 3+ signals match, OR the prompt has both numbered steps AND column definitions.
+Expected output:
+- [action-style steps]
+```
 
-### Workflow Extraction Pipeline
+**Decision heuristic**: Steps containing keywords like "impact", "criteria", "evaluate", "prioritize", "rank" are classified as evaluation criteria. Other steps become expected output items.
 
-When detected as a workflow, Layer 2 uses an alternate extraction pipeline:
+### Execution Mode
+```
+Role: [role]
 
-1. **Role** — explicit role first, then intent-aware inference (financial analyst > product manager > content research specialist > workflow automation specialist)
-2. **Objective** — from "you need to", "the goal is to", "need help setting up", or task extraction fallback. For Decision workflows, this captures analytical goals like "Understand what to build next and why".
-3. **Context** — target audience ("for a consultant"), expertise areas, platforms (LinkedIn, Instagram, etc.), content style
-4. **Topics** — from vertical lists ("find topics on:\n- X\n- Y") or inline mentions ("things like X, Y, Z")
-5. **Data Sources** — line-by-line URL parsing with category headers; Google Alerts detected separately
-6. **Steps** — from "Step N:" patterns, numbered lists, or analytical gerund fallback (e.g. "Identify high-impact features", "Group similar requests")
-7. **Output Format** — "Column A-G:" definitions with parenthetical cleanup
-8. **Tools** — Google Sheets, Monaco Editor, Excel, Notion, Airtable detection
-9. **Guidelines** — inferred from context: informative → prioritize insights, actionable → ensure relevance, decision-making → business focus / justify prioritization, generic avoidance, practical takeaways, social media → content creation focus, scrape → clean content
+Objective: [task]
 
-### Workflow Length Guard
+Steps:
+1. [step 1]
+2. [step 2]
 
-Unlike content prompts, workflow prompts may slightly **expand** (adding structure headers). The guard allows up to 15% expansion since the value is in restructuring, not compression.
-
-## Layer 3: Build Structured Prompt
+Constraints:
+- [constraint 1]
+```
 
 ### Quality Gate
 
-Before assembling, a structure score is calculated:
-
+Before building, a signal strength score is calculated:
 ```
-score = (task ? 1 : 0)
-      + (constraints.length > 0 ? 1 : 0)
-      + (key points.length > 0 ? 1 : 0)
-      + (output requirements.length > 0 ? 1 : 0)
+signalStrength = (task ? 1 : 0) + (steps.length > 0 ? 1 : 0) + (constraints.length > 0 ? 1 : 0)
 ```
 
-| Score | Action |
-|---|---|
-| >= 2 | Full structured output (Role/Task/Constraints/Key Points/Output) |
-| 1 (task only) | Partial structure (Role + Task) |
-| 0 | Return cleaned text as-is |
-
-### Deduplication Pipeline
-
-Before assembly, three deduplication passes run:
-
-1. **Key points vs task**: If 60%+ of a key point's significant words appear in the task, the point is dropped (it's redundant)
-2. **Output requirements vs key points**: If 50%+ of a requirement's significant words appear in any key point, the requirement is dropped
-3. **Content patterns vs semantic signals**: Handled inside key point extraction (described above)
-
-### Length Guard
-
-After assembly, if the structured output has **more tokens than the original input**, it falls back:
-1. First fallback: use cleaned text (layer 1 output only)
-2. Second fallback: if cleaned text is also longer, return the original input unchanged
-
-This prevents short, already-concise prompts from being inflated with structure.
+If signalStrength >= 1, structured output is produced. Otherwise, the cleaned text (Layer 1 output) is returned as-is.
 
 ### Acronym Casing
 
 Final pass fixes common acronym casing: ai→AI, api→API, ml→ML, sql→SQL, html→HTML, json→JSON, etc.
+
+---
+
+## Content Path (via `index.js`)
+
+The main `optimizeLocal()` function in `index.js` maintains the original content and workflow extraction paths for prompts routed through that entry point:
+
+- **Content path**: Extracts role (explicit or inferred), task, constraints (tone, length, audience), key points (content patterns + semantic signals), and output requirements. Uses a quality gate (score >= 2 for full structure) and a **length guard** that rejects structured output if it exceeds the original token count.
+
+- **Workflow path**: Extracts objective, context, topics, data sources, steps, output format, tools, and guidelines. Uses a relaxed length guard (15% expansion allowed since structure adds value).
+
+- **Execution path**: Uses the instruction extraction layer — `splitPrompt` → `extractTask` → `extractSteps` → `extractConstraints` → `buildModeOutput('execution', ...)`. Skips the length guard (execution prompts need structure regardless of length).
+
+The `engine.js` interpret function provides a unified entry point that routes all intents through the same signal-based pipeline.
+
+---
+
+## Score Transparency
+
+Both `scoreIntent()` and `scoreDomain()` return full score maps alongside the winner:
+
+```javascript
+{
+  winner: 'workflow',
+  score: 11,
+  confidence: 0.73,   // winner's score / total signal mass
+  scores: {
+    content: 2,
+    workflow: 11,
+    analysis: 3,
+    decision: 0,
+    execution: 0
+  }
+}
+```
+
+This makes the scoring engine fully inspectable — no black-box decisions.
+
+---
 
 ## Token Estimation
 
@@ -304,11 +445,37 @@ The local and AI optimization paths are intentionally kept independent. They do 
 
 **Why separate?** Chaining would defeat the purpose — the AI should demonstrate its own ability to parse messy prompts, not just polish pre-structured output. The two paths serve different use cases:
 
-- **Local**: Free, instant, deterministic. Uses rule-based regex patterns with domain-priority role inference (e.g., DevOps keywords override content verbs).
+- **Local**: Free, instant, deterministic. Uses signal-based scoring with weighted pattern matching and instruction-priority extraction.
 - **AI**: Costs tokens, non-deterministic. Uses GPT-4o-mini with a structured system prompt that includes role inference guidance.
 
-**The role inference problem:** A prompt like "Write a guide about setting up CI/CD pipelines" can be interpreted as content writing (verb = "write") or DevOps (topic = CI/CD). The local engine handles this with explicit priority ordering — DevOps keywords are checked before content verbs. The AI system prompt includes a rule nudging the model to infer roles from topic domain, not just the verb:
-
-> *"Infer the Role from the topic domain, not just the verb. 'Write a guide about CI/CD' needs a DevOps engineer, not a content writer."*
-
 If the user runs Quick Optimize first, then clicks Deep Optimize, the AI receives the local output (already structured). If they click Deep Optimize directly, the AI receives the raw input. Both paths are valid.
+
+---
+
+## Module Map
+
+```
+src/optimizer/
+├── index.js              Main pipeline orchestrator (optimizeLocal)
+├── scoring.js            Signal definitions + generic scoring engine
+├── builder.js            Mode-based output builder (5 modes)
+├── engine.js             Standalone 7-layer interpretation pipeline
+├── utils.js              hardCleanup, compressClarity, fixCasing
+├── tokens.js             Tiktoken + Anthropic token counting
+├── patterns.js           SOFT_LANGUAGE, VERBOSE_TO_CONCISE, TASK_NORMALIZATIONS
+├── ai.js                 OpenAI integration (gpt-4o-mini)
+└── extractors/
+    ├── intent.js         → delegates to scoring.js scoreIntent()
+    ├── domain.js         → delegates to scoring.js scoreDomain()
+    ├── role.js           Intent × Domain → Role mapping (5×13 matrix)
+    ├── content.js        Sophisticated content extraction (~650 lines)
+    ├── workflow.js       Workflow/analysis/decision extraction (~260 lines)
+    └── instructions.js   Context/instruction separation + instruction-priority extraction
+
+src/__tests__/
+├── optimizer.test.js     99 tests — full pipeline regression suite
+├── engine.test.js        54 tests — scoring, builder, engine, edge cases
+└── instructions.test.js  34 tests — instruction extraction layer
+```
+
+Total: **187 tests** across 3 test files.
