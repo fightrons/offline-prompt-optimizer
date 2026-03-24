@@ -207,6 +207,36 @@ Weights 1-4 follow a specificity principle:
 
 ---
 
+## Phase 6: Synthesis Layer (v0.6 — Current)
+
+The synthesis layer was added between extraction and output building to solve a key limitation: raw extraction returns literal text from the prompt, but real-world instructions are noisy, numbered inconsistently, and need interpretation.
+
+### Key additions
+
+- **`synthesizeObjective(instructions, intent)`**: Generates intent-appropriate objectives instead of extracting raw sentences. Execution + proposal → "Identify relevant opportunities and create targeted proposals"
+- **`normalizeSteps(sentences)`**: Maps raw action sentences to canonical phrasings via 20 pattern→canonical rules (e.g., "Open this page linkedin.com..." → "Access the target platform")
+- **`dedupeSteps(steps)`**: Removes exact + semantic duplicates using 60% word overlap threshold
+- **`synthesizeConstraints(instructions)`**: Strips numbering artifacts ("3 Do not..." → "Do not..."), deduplicates
+- **`cleanInstructionText(text)`**: Strips numbering (1., 2.1, Step N:, bullets) before sentence analysis
+- **`extractActionSentences(text)`**: Filters to action-verb sentences, rejects context/narrative
+
+### Architecture change
+
+Additive — sits between Layer 5 (extraction) and Layer 7 (output building):
+
+```
+Layer 5: Extraction → raw task, steps, constraints
+  ↓
+Synthesis Layer:
+  cleanInstructionText → extractActionSentences → normalizeSteps → dedupeSteps
+  synthesizeObjective (intent-aware)
+  synthesizeConstraints (clean + dedupe)
+  ↓
+Layer 7: Output Builder → formatted output
+```
+
+---
+
 ## Module Map (Current)
 
 ```
@@ -215,6 +245,7 @@ src/optimizer/
 ├── scoring.js            Signal definitions + generic scoring engine
 ├── builder.js            Mode-based output builder (5 modes)
 ├── engine.js             Standalone 7-layer interpretation pipeline
+├── synthesis.js          Controlled synthesis: objective, step normalization, constraint cleaning
 ├── utils.js              hardCleanup, compressClarity, fixCasing
 ├── tokens.js             Tiktoken + Anthropic token counting
 ├── patterns.js           SOFT_LANGUAGE, VERBOSE_TO_CONCISE, TASK_NORMALIZATIONS
@@ -230,7 +261,8 @@ src/optimizer/
 src/__tests__/
 ├── optimizer.test.js     99 tests — full pipeline regression suite
 ├── engine.test.js        54 tests — scoring, builder, engine, edge cases
-└── instructions.test.js  34 tests — instruction extraction layer
+├── instructions.test.js  34 tests — instruction extraction layer
+└── synthesis.test.js     55 tests — synthesis layer (objective, steps, constraints)
 ```
 
 ---
@@ -244,3 +276,4 @@ src/__tests__/
 | Phase 3 | 80 | 7 content tests + 1 workflow test + leakage prevention |
 | Phase 4 | 133 | + 34 instruction extraction tests + 2 intent-alignment tests |
 | Phase 5 | 187 | + 54 scoring/engine/builder tests + execution mode |
+| Phase 6 | 242 | + 55 synthesis tests (objective, step normalization, constraints) |

@@ -391,6 +391,78 @@ Final pass fixes common acronym casing: ai→AI, api→API, ml→ML, sql→SQL, 
 
 ---
 
+## Synthesis Layer
+
+Sits between extraction (Layer 5) and output building (Layer 7). Unlike extraction which pulls raw text, synthesis **interprets** intent, groups actions, removes noise, and generates clean structured output.
+
+### Why Synthesis?
+
+Raw extraction returns whatever text was in the prompt. For a prompt like:
+
+> *"1. Open this page https://linkedin.com/... 2. Understand the services which we provide and only send proposals to relevant services 3. Once you write the cover letter, share it with me for approval..."*
+
+Raw extraction returns verbose, literal steps. Synthesis normalizes them to:
+
+1. Access the target platform
+2. Assess service relevance
+3. Draft a targeted proposal
+4. Share for approval
+5. Submit final output
+
+### Pipeline
+
+```
+Raw instructions
+  → cleanInstructionText()      Strip numbering (1., 2.1, Step N:, bullets)
+  → synthesizeObjective()       Intent-aware objective generation
+  → extractActionSentences()    Filter to action-verb sentences only
+  → normalizeSteps()            Map to canonical phrasings (20 pattern rules)
+  → dedupeSteps()               Remove exact + semantic duplicates (60% overlap)
+  → synthesizeConstraints()     Extract, clean numbering artifacts, deduplicate
+  → { objective, steps, constraints }
+```
+
+### Objective Synthesis
+
+Instead of extracting a raw sentence, `synthesizeObjective(instructions, intent)` generates intent-appropriate objectives:
+
+| Intent | Signal | Synthesized Objective |
+|---|---|---|
+| execution | proposal + linkedin/send | "Identify relevant opportunities and create targeted proposals" |
+| execution | apply/application | "Prepare and submit a targeted application" |
+| execution | deliver/distribute | "Prepare and deliver output to target recipients" |
+| analysis | financial/revenue | "Analyze financial data to extract actionable insights and patterns" |
+| analysis | market/competitor | "Analyze market data to identify trends and opportunities" |
+| decision | roadmap/what to build | "Evaluate inputs and prioritize initiatives based on impact and feasibility" |
+| workflow | rss/scrape/crawl | "Execute a structured workflow to collect and organize information" |
+| content | *(any)* | Falls through to extracted task (no synthesis needed) |
+
+### Step Normalization
+
+Maps messy real-world instructions to clean canonical steps via a prioritized pattern map:
+
+| Raw Pattern | Canonical Step |
+|---|---|
+| open/visit/navigate + page/site/portal | "Access the target platform" |
+| review/check + input/requirement/request | "Review input requirements" |
+| filter/select/pick + relevant/matching | "Filter for relevant items" |
+| write/draft/compose + cover letter/proposal | "Draft a targeted proposal" |
+| share/present + approval/review | "Share for approval" |
+| submit/send/deliver + final/approved | "Submit final output" |
+| analyze + data/trend/metric | "Analyze data for patterns and insights" |
+| prioritize/rank + impact/effort | "Prioritize by impact and feasibility" |
+
+Sentences that don't match any pattern are kept with minimal cleanup (strip leading conjunctions, capitalize).
+
+### Constraint Synthesis
+
+Goes beyond raw extraction:
+- Strips numbering artifacts ("3 Do not..." → "Do not...")
+- Normalizes capitalization
+- Deduplicates by semantic word overlap (60% threshold)
+
+---
+
 ## Content Path (via `index.js`)
 
 The main `optimizeLocal()` function in `index.js` maintains the original content and workflow extraction paths for prompts routed through that entry point:
@@ -460,6 +532,7 @@ src/optimizer/
 ├── scoring.js            Signal definitions + generic scoring engine
 ├── builder.js            Mode-based output builder (5 modes)
 ├── engine.js             Standalone 7-layer interpretation pipeline
+├── synthesis.js          Controlled synthesis: objective, step normalization, constraint cleaning
 ├── utils.js              hardCleanup, compressClarity, fixCasing
 ├── tokens.js             Tiktoken + Anthropic token counting
 ├── patterns.js           SOFT_LANGUAGE, VERBOSE_TO_CONCISE, TASK_NORMALIZATIONS
@@ -475,7 +548,8 @@ src/optimizer/
 src/__tests__/
 ├── optimizer.test.js     99 tests — full pipeline regression suite
 ├── engine.test.js        54 tests — scoring, builder, engine, edge cases
-└── instructions.test.js  34 tests — instruction extraction layer
+├── instructions.test.js  34 tests — instruction extraction layer
+└── synthesis.test.js     55 tests — synthesis layer (objective, steps, constraints)
 ```
 
-Total: **187 tests** across 3 test files.
+Total: **242 tests** across 4 test files.
