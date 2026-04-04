@@ -38,6 +38,7 @@ import { mapRole } from './extractors/role.js';
 import { buildModeOutput } from './builder.js';
 import { classifyPromptType } from './classifier.js';
 import { buildSpecification } from './specBuilder.js';
+import { filterByInputPresence, isBlockedConcept } from './validation.js';
 
 
 /**
@@ -139,20 +140,29 @@ export function interpret(rawText) {
   const steps = extractSteps(source);
   const constraints = extractInstructionConstraints(source);
 
+  // ─── Layer 5.5: Input Validation Gate ─────────────────────────────────
+  // Anti-pattern-leakage: filter steps and constraints against the raw input.
+  // Any concept that doesn't trace back to the input is discarded.
+  const validatedSteps = steps.filter(s => !isBlockedConcept(s, rawText));
+  const validatedConstraints = constraints.filter(c => !isBlockedConcept(c, rawText));
+
   // ─── Layer 6: Role Mapping ───────────────────────────────────────────
   const role = mapRole(intentResult.winner, domainResult.winner);
 
+  // Block task if it's a known hallucinated template
+  const validatedTask = (task && isBlockedConcept(task, rawText)) ? null : task;
+
   // ─── Layer 7: Mode-Based Output ──────────────────────────────────────
   // Quality gate: only structure if we extracted enough signal
-  const signalStrength = (task ? 1 : 0) + (steps.length > 0 ? 1 : 0) + (constraints.length > 0 ? 1 : 0);
+  const signalStrength = (validatedTask ? 1 : 0) + (validatedSteps.length > 0 ? 1 : 0) + (validatedConstraints.length > 0 ? 1 : 0);
   let output;
 
   if (signalStrength >= 1) {
     output = buildModeOutput(intentResult.winner, {
       role,
-      task,
-      steps,
-      constraints,
+      task: validatedTask,
+      steps: validatedSteps,
+      constraints: validatedConstraints,
     });
   } else {
     // Not enough signal to structure — return cleaned text
@@ -164,11 +174,12 @@ export function interpret(rawText) {
     intent: intentResult.winner,
     domain: domainResult.winner,
     role,
-    task,
-    steps,
-    constraints,
+    task: validatedTask,
+    steps: validatedSteps,
+    constraints: validatedConstraints,
     hasInstructions,
     contextUsed: !hasInstructions,
+    gapConfidence: intentResult.gapConfidence,
     scores: {
       intent: intentResult.scores,
       domain: domainResult.scores,

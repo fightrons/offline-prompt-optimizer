@@ -102,9 +102,22 @@ export function extractTask(text) {
         // Normalize "guide/tutorial about" → "guide on" for cleaner phrasing
         task = task.replace(/\b(guide|tutorial)\s+about\b/i, '$1 on');
 
-        // Enrich thin tasks with product context from full text
+        // Enrich thin tasks with product context from full text — STRICT GATE
+        // Only fire when the user explicitly says they want to build a SaaS/MVP/product.
+        // The verb "build/create/develop/launch" must appear in the same sentence as
+        // "saas/mvp/product/startup/app" to prevent leakage from incidental mentions
+        // (e.g., "marketing, product, sales" where "product" is a department name).
         const fullLower = text.toLowerCase();
-        if (task.split(/\s+/).length <= 3 && /\b(?:mvp|saas|product|startup)\b/i.test(fullLower)) {
+        const hasBuildVerb = /\b(?:build(?:ing)?|creat(?:e|ing)|develop(?:ing)?|launch(?:ing)?|mak(?:e|ing))\b/i;
+        const hasProductNoun = /\b(?:mvp|saas|product|startup|app|application|platform)\b/i;
+        const sentences = text.split(/[.!?\n]+/).filter(s => s.trim().length > 5);
+        const hasExplicitBuildProduct = sentences.some(s =>
+          hasBuildVerb.test(s) && hasProductNoun.test(s) &&
+          // Exclude sentences where the build verb itself is hedged:
+          // "maybe we should build" = hedged, but "building something like a SaaS product" = not hedged
+          !/\b(?:maybe|perhaps)\s+(?:we\s+)?(?:should|could|might)\s+(?:build|create|develop)\b/i.test(s)
+        );
+        if (task.split(/\s+/).length <= 3 && hasExplicitBuildProduct) {
           // Extract what the product is about
           const productMatch = fullLower.match(/\b(?:saas|app|application|product|platform)\s+(?:for|about|to\s+(?:help\s+with\s+)?)\s*(.+?)(?:\.|,|$)/i)
             || fullLower.match(/\b(?:for|about)\s+(task\s+management|project\s+management|[\w\s]+?(?:management|tracking|scheduling|monitoring))\b/i);
@@ -263,11 +276,21 @@ export function extractConstraints(text) {
     constraints.push('Prioritize low-cost implementation');
   }
 
-  // Avoid over-engineering — only for product/system building context, not writing style
-  if (/\b(?:over[- ]?engineer|too\s+(?:fancy|complex|complicated))\b/i.test(lower)
-    || (/\bkeep\s+it\s+simple\b/i.test(lower) && /\b(?:mvp|saas|product|build|develop|implement|architect)\b/i.test(lower))
-    || /\b(?:mvp|saas|startup)\b/i.test(lower)) {
-    constraints.push('Avoid over-engineering');
+  // Avoid over-engineering — only when explicitly building + product context co-occur
+  // in the same sentence, or explicit "over-engineer" phrase is used.
+  // Prevents leakage when "product" is a department name.
+  {
+    const constraintSentences = text.split(/[.!?\n]+/).filter(s => s.trim().length > 5);
+    const hasExplicitBuildForOverEng = constraintSentences.some(s =>
+      /\b(?:build|develop|create|implement|launch)\b/i.test(s) &&
+      /\b(?:mvp|saas|startup)\b/i.test(s) &&
+      !/\b(?:maybe|perhaps)\s+(?:we\s+)?(?:should|could|might)\s+(?:build|create|develop)\b/i.test(s)
+    );
+    if (/\b(?:over[- ]?engineer|too\s+(?:fancy|complex|complicated))\b/i.test(lower)
+      || (/\bkeep\s+it\s+simple\b/i.test(lower) && /\b(?:mvp|saas|product|build|develop|implement|architect)\b/i.test(lower))
+      || hasExplicitBuildForOverEng) {
+      constraints.push('Avoid over-engineering');
+    }
   }
 
   return constraints;
@@ -412,8 +435,16 @@ export function extractKeyPoints(text, originalText, intent = 'content', domain 
     if (!points.includes(point)) points.push(point);
   }
 
-  // MVP/product signals (only if explicitly building an MVP/SaaS)
-  if (/\b(?:build|develop|create|implement|launch)\b/i.test(lower) && /\b(?:mvp|minimum viable product|saas|startup)\b/i.test(lower)) {
+  // MVP/product signals — STRICT GATE: build verb + product noun must co-occur
+  // in the same sentence AND not be hedged with uncertainty language.
+  // Prevents leakage when "product" is a department name or incidental mention.
+  const mvpSentences = text.split(/[.!?\n]+/).filter(s => s.trim().length > 5);
+  const hasExplicitMvpBuild = mvpSentences.some(s =>
+    /\b(?:build(?:ing)?|develop(?:ing)?|creat(?:e|ing)|implement(?:ing)?|launch(?:ing)?)\b/i.test(s) &&
+    /\b(?:mvp|minimum viable product|saas|startup)\b/i.test(s) &&
+    !/\b(?:maybe|perhaps)\s+(?:we\s+)?(?:should|could|might)\s+(?:build|create|develop)\b/i.test(s)
+  );
+  if (hasExplicitMvpBuild) {
     const mvpPoint = 'Define MVP scope and core features';
     if (!points.includes(mvpPoint)) points.push(mvpPoint);
   }
@@ -429,7 +460,13 @@ export function extractKeyPoints(text, originalText, intent = 'content', domain 
   }
 
   // Explicit-only constraint for aggressive patterns (Pattern Leakage protection)
-  const isExplicitBuilding = /\b(?:build|develop|create|implement|launch)\b/i.test(lower) && intent !== 'decision' && intent !== 'analysis';
+  // Require build verb + product noun in the same non-hedged sentence.
+  const buildSentences = text.split(/[.!?\n]+/).filter(s => s.trim().length > 5);
+  const isExplicitBuilding = buildSentences.some(s =>
+    /\b(?:build(?:ing)?|develop(?:ing)?|creat(?:e|ing)|implement(?:ing)?|launch(?:ing)?)\b/i.test(s) &&
+    /\b(?:mvp|saas|product|app|application|platform|tool|system|service)\b/i.test(s) &&
+    !/\b(?:maybe|perhaps)\s+(?:we\s+)?(?:should|could|might)\s+(?:build|create|develop)\b/i.test(s)
+  ) && intent !== 'decision' && intent !== 'analysis';
 
   // AI feature integration (generic — not prompt optimization specific)
   const origLowerFull = (originalText || text).toLowerCase();

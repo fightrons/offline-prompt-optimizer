@@ -182,7 +182,7 @@ export function extractWorkflowComponents(text, originalText, intent, domain) {
   }
   // Fallback: looking for gerund lists if no numbered steps
   if (steps.length === 0) {
-    const taskListMatch = orig.match(/\b(?:actions?|tasks?|do|steps?)\s*[:—]\s*\n([\s\S]*?)(?:\n\s*\n|\n(?:Data|Source|http|Here|Column|Output|Tools))/im);
+    const taskListMatch = orig.match(/\b(?:actions?|tasks?|do|steps?|want\s+is|want\s+to|need\s+is)\s*[:—]\s*\n([\s\S]*?)(?:\n\s*\n|\n(?:Data|Source|http|Here|Column|Output|Tools|Also\b))/im);
     if (taskListMatch) {
       const tLines = taskListMatch[1].split('\n')
         .map(l => l.replace(/^[-•*\d.)\s]+/, '').trim())

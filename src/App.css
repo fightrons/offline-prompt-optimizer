@@ -95,27 +95,53 @@
 }
 
 /* Main Input Area */
-.input-section {
+.input-card {
   position: relative;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0;
   margin-bottom: 24px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input-card:focus-within {
+  border-color: var(--brand-color);
+  box-shadow: 0 0 0 3px rgba(38, 161, 123, 0.15);
+}
+
+.input-header {
+  padding: 16px 20px;
+  background: var(--bg-color);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.input-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
 }
 
 .prompt-textarea {
   width: 100%;
-  background: var(--panel-bg);
-  border: 1px solid var(--border-color);
+  background: transparent;
+  border: none;
   color: var(--text-primary);
-  padding: 24px;
-  padding-right: 32px;
-  padding-bottom: 64px;
-  border-radius: 12px;
+  padding: 20px;
   font-family: inherit;
   font-size: 16px;
   line-height: 1.5;
   resize: vertical;
   min-height: 180px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05); /* subtle inner shadow */
 }
 
 .prompt-textarea::-webkit-scrollbar {
@@ -136,21 +162,6 @@
 
 .prompt-textarea:focus {
   outline: none;
-  border-color: var(--brand-color);
-  box-shadow: 0 0 0 3px rgba(38, 161, 123, 0.15);
-}
-
-.textarea-actions {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  display: flex;
-  gap: 6px;
-  background: var(--bg-color);
-  padding: 6px;
-  border-radius: 10px;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .icon-btn {

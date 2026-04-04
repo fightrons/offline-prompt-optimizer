@@ -8,6 +8,7 @@ import { mapRole } from './extractors/role.js';
 import { splitPrompt, extractTask as extractInstructionTask } from './extractors/instructions.js';
 import { buildModeOutput } from './builder.js';
 import { synthesizeOutput } from './synthesis.js';
+import { isBlockedConcept } from './validation.js';
 
 // Pre-load encoder on import so it's ready by the time user clicks optimize
 getEncoder();
@@ -39,6 +40,15 @@ export function optimizeLocal(input) {
   if (intent === 'workflow' || intent === 'analysis' || intent === 'decision') {
     // ─── Intent-Aware Path: extract structured components based on intent ───
     const components = extractWorkflowComponents(cleaned, input, intent, domain);
+
+    // ─── Validation Gate: block leaked objectives ───
+    if (components.objective && isBlockedConcept(components.objective, input)) {
+      components.objective = null;
+    }
+    // Filter steps and guidelines against input
+    components.steps = components.steps.filter(s => !isBlockedConcept(s, input));
+    components.guidelines = components.guidelines.filter(g => !isBlockedConcept(g, input));
+
     optimized = buildIntentSpecificPrompt(components);
     changes.push(`Detected ${intent} prompt — used structured ${intent} format`);
     if (components.role) changes.push(`Inferred role: "${components.role}"`);
@@ -96,6 +106,10 @@ export function optimizeLocal(input) {
       return true;
     });
     outputRequirements = [...outputRequirements, ...promoted];
+
+    // Validation gate: block leaked key points and requirements
+    keyPoints = keyPoints.filter(p => !isBlockedConcept(p, input));
+    outputRequirements = outputRequirements.filter(r => !isBlockedConcept(r, input));
 
     // Deduplicate: key points vs task, requirements vs key points
     keyPoints = deduplicateAgainstTask(keyPoints, task);

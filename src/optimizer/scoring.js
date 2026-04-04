@@ -46,6 +46,9 @@ export const INTENT_SIGNALS = {
     { pattern: /\b(?:patterns?)\b/i, weight: 1 },
     { pattern: /\b(?:correlation|regression|findings)\b/i, weight: 2 },
     { pattern: /\b(?:data\s+analysis|statistical)\b/i, weight: 3 },
+    { pattern: /\bwhat(?:'s| is)\s+(?:actually\s+)?(?:working|performing)\b/i, weight: 3 },
+    { pattern: /\b(?:understand|identify)\s+what\b/i, weight: 2 },
+    { pattern: /\bperforming\b/i, weight: 1 },
   ],
 
   decision: [
@@ -56,6 +59,9 @@ export const INTENT_SIGNALS = {
     { pattern: /\b(?:trade[- ]?offs?|tradeoffs?)\b/i, weight: 3 },
     { pattern: /\b(?:strategic\s+plan)\b/i, weight: 4 },
     { pattern: /\bwhat\s+to\s+build\s+next\b/i, weight: 4 },
+    { pattern: /\bwhat\s+to\s+do\s+next\b/i, weight: 3 },
+    { pattern: /\btell\s+us\s+what\s+to\s+do\b/i, weight: 3 },
+    { pattern: /\bwhat\s+to\s+(?:scale|stop|optimize|keep|cut|change)\b/i, weight: 3 },
   ],
 
   execution: [
@@ -77,6 +83,38 @@ const INTENT_PRIORITY = {
   execution: 2,
   content: 1,
 };
+
+
+// ─── Weak Signal Patterns ───────────────────────────────────────────────────
+// Hedging, uncertainty, and vague language that should penalize ALL intent scores.
+// Each match subtracts its penalty from every category's raw score.
+
+export const WEAK_SIGNAL_PATTERNS = [
+  { pattern: /\bmaybe\b/gi, penalty: 1 },
+  { pattern: /\bi think\b/gi, penalty: 1 },
+  { pattern: /\bkind of\b/gi, penalty: 1 },
+  { pattern: /\bnot sure\b/gi, penalty: 2 },
+  { pattern: /\bor something\b/gi, penalty: 1 },
+  { pattern: /\bi guess\b/gi, penalty: 1 },
+  { pattern: /\bnot really\b/gi, penalty: 1 },
+  { pattern: /\bdon'?t (?:really )?know\b/gi, penalty: 1 },
+  { pattern: /\bpossibly\b/gi, penalty: 1 },
+];
+
+
+// ─── Strong Signal Patterns ─────────────────────────────────────────────────
+// Explicit directive language that boosts the intent it maps to.
+// Each match adds its boost to the specified intent category.
+
+export const STRONG_SIGNAL_PATTERNS = [
+  // Explicit desire — boost whichever intent the surrounding text supports
+  { pattern: /\bwhat i want is\b/i, boost: 2, target: null },
+  { pattern: /\bi want to\b/i, boost: 2, target: null },
+  { pattern: /\bi want you to\b/i, boost: 2, target: null },
+  { pattern: /\bi need to\b/i, boost: 2, target: null },
+  // Imperative bullet/list items starting with action verbs
+  { pattern: /^\s*\*\s*(?:analyze|figure|tell|identify|evaluate|determine|assess)/im, boost: 2, target: null },
+];
 
 // ─── Domain Signal Definitions ───────────────────────────────────────────────
 // Each domain maps to keywords that indicate the subject area.
@@ -157,6 +195,8 @@ export const DOMAIN_SIGNALS = {
     { pattern: /\b(?:brand|branding|content\s*strategy)\b/i, weight: 2 },
     { pattern: /\b(?:social\s*media)\b/i, weight: 2 },
     { pattern: /\b(?:analytics)\b/i, weight: 1 },
+    { pattern: /\bmarketing\b/i, weight: 3 },
+    { pattern: /\bsales\b/i, weight: 2 },
   ],
 
   healthcare: [
@@ -275,16 +315,136 @@ export function pickWinner(scores, fallback = 'generic', priority = {}) {
 // ─── Specific Scoring Functions ──────────────────────────────────────────────
 
 /**
- * Scores text for intent detection.
- * Returns the winning intent, all scores, and confidence.
+ * Calculates the total weak signal penalty for a given text.
+ * Each weak signal pattern match subtracts its penalty value.
  *
  * @param {string} text
- * @returns {{ winner: string, scores: Object<string,number>, score: number, confidence: number }}
+ * @returns {number} — total penalty (always >= 0)
+ */
+export function applyWeakSignalPenalty(text) {
+  let totalPenalty = 0;
+  for (const { pattern, penalty } of WEAK_SIGNAL_PATTERNS) {
+    const matches = text.match(pattern);
+    if (matches) {
+      totalPenalty += penalty * matches.length;
+    }
+  }
+  return totalPenalty;
+}
+
+
+/**
+ * Computes gap-based confidence: how much the top score separates from the second.
+ *
+ * confidence = (topScore - secondScore) / totalScore
+ *
+ * Thresholds:
+ *   >= 0.6  → high confidence (accept)
+ *   0.3–0.6 → low confidence (usable but uncertain)
+ *   < 0.3   → fallback (ambiguous)
+ *
+ * @param {Object<string, number>} scores — raw scores per category
+ * @returns {{ confidence: number, level: 'high'|'low'|'fallback', topScore: number, secondScore: number }}
+ */
+export function computeConfidence(scores) {
+  const sorted = Object.values(scores).sort((a, b) => b - a);
+  const topScore = sorted[0] || 0;
+  const secondScore = sorted[1] || 0;
+  const total = sorted.reduce((sum, s) => sum + s, 0);
+
+  const confidence = total > 0 ? (topScore - secondScore) / total : 0;
+  const level = confidence >= 0.6 ? 'high' : confidence >= 0.3 ? 'low' : 'fallback';
+
+  return { confidence, level, topScore, secondScore };
+}
+
+
+/**
+ * Detects which intent category should receive strong signal boosts.
+ * For target:null strong signals, determines the target from surrounding context.
+ *
+ * @param {string} text
+ * @param {Object<string, number>} scores — current raw scores
+ * @returns {Object<string, number>} — boost values per intent
+ */
+function computeStrongBoosts(text, scores) {
+  const boosts = {};
+
+  for (const { pattern, boost, target } of STRONG_SIGNAL_PATTERNS) {
+    if (!pattern.test(text)) continue;
+
+    if (target) {
+      boosts[target] = (boosts[target] || 0) + boost;
+    } else {
+      // Boost the currently-leading intent (strong signals amplify existing signal)
+      let best = null;
+      let bestScore = 0;
+      for (const [cat, s] of Object.entries(scores)) {
+        if (s > bestScore) { bestScore = s; best = cat; }
+      }
+      if (best) {
+        boosts[best] = (boosts[best] || 0) + boost;
+      }
+    }
+  }
+
+  return boosts;
+}
+
+
+/**
+ * Scores text for intent detection.
+ * Returns the winning intent, all scores, confidence, and gap-based confidence.
+ *
+ * Enhanced with:
+ *   - Weak signal penalty (hedging language reduces all scores)
+ *   - Strong signal boost (explicit directives amplify leading intent)
+ *   - Gap-based confidence (topScore - secondScore) / totalScore
+ *
+ * @param {string} text
+ * @returns {{
+ *   winner: string,
+ *   scores: Object<string,number>,
+ *   score: number,
+ *   confidence: number,
+ *   gapConfidence: { confidence: number, level: string, topScore: number, secondScore: number },
+ *   weakPenalty: number
+ * }}
  */
 export function scoreIntent(text) {
-  const scores = computeScores(text, INTENT_SIGNALS);
-  const result = pickWinner(scores, 'generic', INTENT_PRIORITY);
-  return { ...result, scores };
+  // 1. Compute raw signal scores
+  const rawScores = computeScores(text, INTENT_SIGNALS);
+
+  // 2. Apply weak signal penalty — reduces scores proportionally.
+  // Penalty caps at 50% of each category's raw score to prevent
+  // legitimate signals from being wiped by hedging language.
+  const weakPenalty = applyWeakSignalPenalty(text);
+  const penalizedScores = {};
+  for (const [cat, score] of Object.entries(rawScores)) {
+    const maxPenalty = Math.ceil(score * 0.5);
+    const effectivePenalty = Math.min(weakPenalty, maxPenalty);
+    penalizedScores[cat] = Math.max(0, score - effectivePenalty);
+  }
+
+  // 3. Apply strong signal boosts (amplify leading intent)
+  const boosts = computeStrongBoosts(text, penalizedScores);
+  const finalScores = {};
+  for (const [cat, score] of Object.entries(penalizedScores)) {
+    finalScores[cat] = score + (boosts[cat] || 0);
+  }
+
+  // 4. Pick winner using existing logic (preserves backward compat for pickWinner)
+  const result = pickWinner(finalScores, 'generic', INTENT_PRIORITY);
+
+  // 5. Compute gap-based confidence
+  const gapConf = computeConfidence(finalScores);
+
+  return {
+    ...result,
+    scores: finalScores,
+    gapConfidence: gapConf,
+    weakPenalty,
+  };
 }
 
 /**

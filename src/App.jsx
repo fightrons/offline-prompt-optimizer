@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { optimizeLocal, optimizeWithAI, estimateTokens, estimateCost, countAnthropicTokens } from './optimizer/index.js'
-import { Settings, Copy, Check, Sparkles, Zap, AlertCircle, Bot, Key, Trash2 } from 'lucide-react'
+import { Settings, Copy, Check, Sparkles, Zap, AlertCircle, Bot, Key, Trash2, FileText } from 'lucide-react'
 import './App.css'
 
 function formatCost(cost) {
@@ -148,23 +148,43 @@ function App() {
         </div>
       </header>
 
-      <div className="input-section">
+      <div className="input-card">
+        <div className="input-header">
+          <h3 className="input-title">
+            <FileText size={18} />
+            Original Prompt
+          </h3>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {input && (
+              <button
+                onClick={handleClearInput}
+                title="Clear Input"
+                style={{
+                  background: 'transparent', border: 'none', color: 'inherit',
+                  cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center'
+                }}
+              >
+                <Trash2 size={18} />
+              </button>
+            )}
+            <button
+              onClick={handleCopyInput}
+              title="Copy Input"
+              style={{
+                background: 'transparent', border: 'none', color: 'inherit',
+                cursor: 'pointer', padding: 4, display: 'flex', alignItems: 'center'
+              }}
+            >
+              {copiedInput ? <Check size={18} /> : <Copy size={18} />}
+            </button>
+          </div>
+        </div>
         <textarea
           className="prompt-textarea"
           placeholder="Paste your prompt here..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
         />
-        <div className="textarea-actions">
-          {input && (
-            <button className="icon-btn clear" onClick={handleClearInput} title="Clear Input">
-              <Trash2 size={16} />
-            </button>
-          )}
-          <button className="icon-btn copy" onClick={handleCopyInput} title="Copy Input">
-            {copiedInput ? <Check size={16} /> : <Copy size={16} />}
-          </button>
-        </div>
       </div>
 
       <div className="action-buttons">
